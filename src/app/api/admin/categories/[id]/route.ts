@@ -3,7 +3,7 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { categoryPatchSchema } from "@/lib/schemas/admin";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const PATCH = withAdminRoute<{ id: string }>(
   {
@@ -13,11 +13,11 @@ export const PATCH = withAdminRoute<{ id: string }>(
   },
   async (request, { params }) => {
     const input = await parseJsonBody(request, categoryPatchSchema);
-    const supabaseAdmin = createSupabaseAdminClient();
+    const supabase = await createSupabaseServerClient();
 
-    const { data: existing, error: existingError } = await supabaseAdmin
+    const { data: existing, error: existingError } = await supabase
       .from("categories")
-      .select("*")
+      .select("id,updated_at")
       .eq("id", params.id)
       .maybeSingle();
 
@@ -29,7 +29,7 @@ export const PATCH = withAdminRoute<{ id: string }>(
       throw notFound("Category not found");
     }
 
-    if (existing.created_at !== input.updatedAt) {
+    if (existing.updated_at !== input.updatedAt) {
       throw conflict("Category was modified concurrently");
     }
 
@@ -41,11 +41,11 @@ export const PATCH = withAdminRoute<{ id: string }>(
       updates.sort_order = input.sortOrder;
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from("categories")
       .update(updates)
       .eq("id", params.id)
-      .eq("created_at", input.updatedAt)
+      .eq("updated_at", input.updatedAt)
       .select("*")
       .single();
 
@@ -56,4 +56,3 @@ export const PATCH = withAdminRoute<{ id: string }>(
     return jsonOk({ category: data });
   },
 );
-

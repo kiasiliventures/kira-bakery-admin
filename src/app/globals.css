@@ -1,18 +1,32 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #f6f7f9;
+  --foreground: #111827;
+  --kira-red: #940202;
+  --kira-red-hover: #7a0101;
+  --kira-red-active: #5f0101;
+  --kira-bg: #fff5f5;
+  --kira-card: #ffffff;
+  --kira-border: #e5e7eb;
+  --kira-muted: #6b7280;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
+  --color-kira-red: var(--kira-red);
+  --color-kira-red-hover: var(--kira-red-hover);
+  --color-kira-red-active: var(--kira-red-active);
+  --color-kira-bg: var(--kira-bg);
+  --color-kira-card: var(--kira-card);
+  --color-kira-border: var(--kira-border);
+  --color-kira-muted: var(--kira-muted);
+  --font-sans: "Segoe UI", "Inter", "Arial", sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-inter), sans-serif;
+  font-family: "Segoe UI", "Inter", "Arial", sans-serif;
 }

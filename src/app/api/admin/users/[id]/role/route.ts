@@ -3,7 +3,7 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { userRolePatchSchema } from "@/lib/schemas/admin";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const PATCH = withAdminRoute<{ id: string }>(
   {
@@ -17,8 +17,8 @@ export const PATCH = withAdminRoute<{ id: string }>(
       throw badRequest("You cannot remove your own admin role");
     }
 
-    const supabaseAdmin = createSupabaseAdminClient();
-    const { data: existing, error: existingError } = await supabaseAdmin
+    const supabase = await createSupabaseServerClient();
+    const { data: existing, error: existingError } = await supabase
       .from("profiles")
       .select("id,role")
       .eq("id", params.id)
@@ -31,7 +31,7 @@ export const PATCH = withAdminRoute<{ id: string }>(
       throw notFound("Profile not found");
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from("profiles")
       .update({ role: input.role })
       .eq("id", params.id)
@@ -45,4 +45,3 @@ export const PATCH = withAdminRoute<{ id: string }>(
     return jsonOk({ profile: data });
   },
 );
-

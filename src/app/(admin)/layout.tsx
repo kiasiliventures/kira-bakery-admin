@@ -1,55 +1,50 @@
-import Link from "next/link";
-import { LogoutButton } from "@/components/admin/logout-button";
-import { Badge } from "@/components/ui/badge";
-import { guardPage } from "@/lib/auth/page-guard";
+import { TopNav } from "@/components/admin/top-nav";
+import { ToastProvider } from "@/components/ui/toast";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export const dynamic = "force-dynamic";
-
-const navItems = [
-  { href: "/", label: "Dashboard" },
-  { href: "/orders", label: "Orders" },
-  { href: "/products", label: "Products" },
-  { href: "/categories", label: "Categories" },
-  { href: "/settings/users", label: "Users" },
-];
+function formatRole(role: string | null | undefined): string {
+  if (!role) return "Staff";
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const identity = await guardPage(["admin", "manager", "staff"]);
+  const supabase = await createSupabaseServerClient();
+  const { data: userData } = await supabase.auth.getUser();
+  const user = userData.user;
+
+  let profileRole = "staff";
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    profileRole = profile?.role ?? "staff";
+  }
+
+  const topNavUser = {
+    name:
+      (typeof user?.user_metadata?.full_name === "string" && user.user_metadata.full_name) ||
+      user?.email?.split("@")[0] ||
+      "Account",
+    email: user?.email ?? "No email",
+    role: formatRole(profileRole),
+    avatarUrl:
+      typeof user?.user_metadata?.avatar_url === "string"
+        ? user.user_metadata.avatar_url
+        : null,
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
-          <div className="space-y-1">
-            <p className="text-sm text-slate-500">KiRA Bakery</p>
-            <h1 className="text-lg font-semibold text-slate-900">Admin Dashboard</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <Badge className="bg-indigo-100 text-indigo-700">{identity.profile.role}</Badge>
-            <LogoutButton />
-          </div>
-        </div>
-      </header>
-      <div className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-6 md:grid-cols-[220px_1fr]">
-        <aside className="rounded-2xl border border-slate-200 bg-white p-3">
-          <nav className="flex flex-col gap-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        </aside>
-        <main>{children}</main>
+    <ToastProvider>
+      <div className="min-h-screen bg-background">
+        <TopNav user={topNavUser} />
+        <main className="mx-auto w-full max-w-[1320px] px-4 pb-8 pt-[88px] md:px-6">{children}</main>
       </div>
-    </div>
+    </ToastProvider>
   );
 }

@@ -12,6 +12,7 @@ export type Category = {
   name: string;
   sort_order: number;
   created_at: string;
+  updated_at: string;
 };
 
 export type Product = {
@@ -20,6 +21,8 @@ export type Product = {
   name: string;
   description: string | null;
   image_url: string | null;
+  base_price: string;
+  stock_quantity: number;
   is_available: boolean;
   is_featured: boolean;
   is_published: boolean;
@@ -40,13 +43,16 @@ export type ProductVariant = {
 
 export type Order = {
   id: string;
+  customer_id?: string | null;
   customer_name: string;
-  customer_phone: string;
-  customer_email: string | null;
-  delivery_address: string | null;
-  order_status: string;
-  payment_status: string;
-  total_price: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  delivery_method: "delivery" | "pickup" | null;
+  delivery_date: string | null;
+  notes: string | null;
+  status: "Pending" | "In Progress" | "Ready" | "Delivered" | "Cancelled";
+  total_ugx: number;
   created_at: string;
   updated_at: string;
 };
@@ -54,10 +60,12 @@ export type Order = {
 export type OrderItem = {
   id: string;
   order_id: string;
-  product_id: string;
-  variant_id: string | null;
+  product_id: string | null;
+  name: string;
+  image: string;
+  price_ugx: number;
   quantity: number;
-  price_at_time: string;
+  selected_size: string | null;
+  selected_flavor: string | null;
   created_at: string;
 };
-

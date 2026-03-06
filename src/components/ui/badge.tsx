@@ -12,4 +12,3 @@ export function Badge({ className, ...props }: React.HTMLAttributes<HTMLSpanElem
     />
   );
 }
-

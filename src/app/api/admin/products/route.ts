@@ -3,7 +3,7 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { productCreateSchema } from "@/lib/schemas/admin";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const POST = withAdminRoute(
   {
@@ -13,10 +13,10 @@ export const POST = withAdminRoute(
   },
   async (request) => {
     const input = await parseJsonBody(request, productCreateSchema);
-    const supabaseAdmin = createSupabaseAdminClient();
+    const supabase = await createSupabaseServerClient();
 
     const now = new Date().toISOString();
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from("products")
       .insert({
         id: uuidv4(),
@@ -24,6 +24,8 @@ export const POST = withAdminRoute(
         name: input.name,
         description: input.description || null,
         image_url: input.imageUrl || null,
+        base_price: input.basePrice.toFixed(2),
+        stock_quantity: input.stockQuantity,
         is_available: input.isAvailable,
         is_featured: input.isFeatured,
         is_published: input.isPublished,
@@ -40,4 +42,3 @@ export const POST = withAdminRoute(
     return jsonOk({ product: data }, 201);
   },
 );
-

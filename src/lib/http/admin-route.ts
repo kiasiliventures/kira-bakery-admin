@@ -25,19 +25,20 @@ export function withAdminRoute<TParams extends Record<string, string> = Record<s
   ): Promise<NextResponse> => {
     try {
       const params = await routeContext.params;
+      const identity = await requireRole(config.allowedRoles);
       const ip = getRequestIp(request);
       const rateLimit = config.rateLimit ?? { limit: 60, windowMs: 60_000 };
-      enforceRateLimit({
-        key: `${config.actionName}:${ip}`,
+      await enforceRateLimit({
+        key: `${config.actionName}:${identity.user.id}`,
         limit: rateLimit.limit,
         windowMs: rateLimit.windowMs,
       });
 
-      const identity = await requireRole(config.allowedRoles);
       logger.info("admin_route_authorized", {
         action: config.actionName,
         userId: identity.user.id,
         role: identity.profile.role,
+        ip,
       });
 
       return await handler(request, { identity, params });
@@ -47,4 +48,3 @@ export function withAdminRoute<TParams extends Record<string, string> = Record<s
     }
   };
 }
-

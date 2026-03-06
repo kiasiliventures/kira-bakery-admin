@@ -31,11 +31,18 @@ export function conflict(message = "Conflict detected"): AppError {
   return new AppError(409, "conflict", message);
 }
 
-export function tooManyRequests(message = "Too many requests"): AppError {
-  return new AppError(429, "rate_limited", message);
+export function tooManyRequests(
+  message = "Too many requests",
+  retryAfterSeconds?: number,
+): AppError {
+  return new AppError(
+    429,
+    "rate_limited",
+    message,
+    retryAfterSeconds ? { retryAfterSeconds } : undefined,
+  );
 }
 
 export function internalError(message = "Internal server error"): AppError {
   return new AppError(500, "internal_error", message);
 }
-

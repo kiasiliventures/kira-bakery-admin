@@ -9,6 +9,29 @@ import type {
   Profile,
 } from "@/lib/types/domain";
 
+type ModernOrderRow = Order;
+
+type LegacyOrderRow = {
+  id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_email: string | null;
+  delivery_address: string | null;
+  order_status: string;
+  payment_status: string;
+  total_price: string;
+  created_at: string;
+  updated_at: string;
+};
+
+function mapLegacyOrderStatus(status: string): Order["status"] {
+  if (status === "pending" || status === "confirmed") return "Pending";
+  if (status === "preparing" || status === "out_for_delivery") return "In Progress";
+  if (status === "ready_for_pickup") return "Ready";
+  if (status === "cancelled") return "Cancelled";
+  return "Delivered";
+}
+
 export async function getDashboardMetrics() {
   const supabase = await createSupabaseServerClient();
 
@@ -61,12 +84,41 @@ export async function getVariantsByProductId(productId: string): Promise<Product
 
 export async function getOrders(): Promise<Order[]> {
   const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
+  const modern = await supabase
     .from("orders")
-    .select("*")
+    .select("id,customer_id,customer_name,phone,email,address,delivery_method,delivery_date,notes,status,total_ugx,created_at,updated_at")
     .order("created_at", { ascending: false })
     .limit(100);
-  return (data ?? []) as Order[];
+
+  if (modern.error?.code === "42703") {
+    const legacy = await supabase
+      .from("orders")
+      .select(
+        "id,customer_name,customer_phone,customer_email,delivery_address,order_status,payment_status,total_price,created_at,updated_at",
+      )
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    return ((legacy.data ?? []) as LegacyOrderRow[]).map((order) => ({
+      id: order.id,
+      customer_name: order.customer_name,
+      phone: order.customer_phone,
+      email: order.customer_email,
+      address: order.delivery_address,
+      delivery_method: order.delivery_address ? "delivery" : "pickup",
+      delivery_date: null,
+      notes: null,
+      status: mapLegacyOrderStatus(order.order_status),
+      total_ugx: Math.round(Number(order.total_price)),
+      created_at: order.created_at,
+      updated_at: order.updated_at,
+    }));
+  }
+
+  return ((modern.data ?? []) as ModernOrderRow[]).map((order) => ({
+    ...order,
+    status: (order.status ?? "Pending") as Order["status"],
+  }));
 }
 
 export async function getOrderItemsByOrderIds(orderIds: string[]): Promise<OrderItem[]> {
@@ -89,4 +141,3 @@ export async function getProfiles(): Promise<Profile[]> {
     .order("created_at", { ascending: false });
   return (data ?? []) as Profile[];
 }
-

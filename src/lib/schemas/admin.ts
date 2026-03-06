@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const uuidSchema = z.uuid("Invalid UUID");
-const isoTimestampSchema = z.string().datetime("Invalid timestamp");
+const isoTimestampSchema = z.string().datetime({ offset: true, message: "Invalid timestamp" });
 
 export const categoryCreateSchema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -19,9 +19,11 @@ export const productCreateSchema = z.object({
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().max(1000).optional().or(z.literal("")),
   imageUrl: z.string().url().optional().or(z.literal("")),
+  basePrice: z.coerce.number().min(0).max(9999999).default(0),
+  stockQuantity: z.coerce.number().int().min(0).max(999999).default(0),
   isAvailable: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
-  isPublished: z.boolean().default(false),
+  isPublished: z.boolean().default(true),
 });
 
 export const productPatchSchema = z.object({
@@ -29,6 +31,8 @@ export const productPatchSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
   description: z.string().trim().max(1000).optional().or(z.literal("")),
   imageUrl: z.string().url().optional().or(z.literal("")),
+  basePrice: z.coerce.number().min(0).max(9999999).optional(),
+  stockQuantity: z.coerce.number().int().min(0).max(999999).optional(),
   isAvailable: z.boolean().optional(),
   isFeatured: z.boolean().optional(),
   isPublished: z.boolean().optional(),
@@ -53,21 +57,12 @@ export const variantPatchSchema = z.object({
 
 export const orderStatusPatchSchema = z.object({
   orderStatus: z.enum([
-    "pending",
-    "confirmed",
-    "preparing",
-    "ready_for_pickup",
-    "out_for_delivery",
-    "completed",
-    "cancelled",
+    "Pending",
+    "In Progress",
+    "Ready",
+    "Delivered",
   ]),
   updatedAt: isoTimestampSchema,
-});
-
-export const productImageUploadSchema = z.object({
-  fileName: z.string().trim().min(3).max(180),
-  contentType: z.string().trim().min(3).max(100),
-  base64File: z.string().trim().min(20),
 });
 
 export const userRolePatchSchema = z.object({
@@ -81,6 +76,4 @@ export type ProductPatchInput = z.infer<typeof productPatchSchema>;
 export type VariantCreateInput = z.infer<typeof variantCreateSchema>;
 export type VariantPatchInput = z.infer<typeof variantPatchSchema>;
 export type OrderStatusPatchInput = z.infer<typeof orderStatusPatchSchema>;
-export type ProductImageUploadInput = z.infer<typeof productImageUploadSchema>;
 export type UserRolePatchInput = z.infer<typeof userRolePatchSchema>;
-

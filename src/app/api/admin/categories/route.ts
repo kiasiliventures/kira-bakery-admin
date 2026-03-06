@@ -2,8 +2,8 @@ import { v4 as uuidv4 } from "uuid";
 import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { categoryCreateSchema } from "@/lib/schemas/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const POST = withAdminRoute(
   {
@@ -13,9 +13,9 @@ export const POST = withAdminRoute(
   },
   async (request) => {
     const input = await parseJsonBody(request, categoryCreateSchema);
-    const supabaseAdmin = createSupabaseAdminClient();
+    const supabase = await createSupabaseServerClient();
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from("categories")
       .insert({
         id: uuidv4(),
@@ -32,4 +32,3 @@ export const POST = withAdminRoute(
     return jsonOk({ category: data }, 201);
   },
 );
-

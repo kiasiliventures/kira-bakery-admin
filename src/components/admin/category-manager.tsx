@@ -48,7 +48,7 @@ export function CategoryManager({ categories, canManage }: Props) {
       body: JSON.stringify({
         name: String(formData.get(`name-${category.id}`) ?? category.name),
         sortOrder: Number(formData.get(`sort-${category.id}`) ?? category.sort_order),
-        updatedAt: category.created_at,
+        updatedAt: category.updated_at,
       }),
     });
     const payload = await response.json();
@@ -95,4 +95,3 @@ export function CategoryManager({ categories, canManage }: Props) {
     </div>
   );
 }
-

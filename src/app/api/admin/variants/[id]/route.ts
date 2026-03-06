@@ -3,7 +3,7 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { variantPatchSchema } from "@/lib/schemas/admin";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const PATCH = withAdminRoute<{ id: string }>(
   {
@@ -13,9 +13,9 @@ export const PATCH = withAdminRoute<{ id: string }>(
   },
   async (request, { params }) => {
     const input = await parseJsonBody(request, variantPatchSchema);
-    const supabaseAdmin = createSupabaseAdminClient();
+    const supabase = await createSupabaseServerClient();
 
-    const { data: existing, error: existingError } = await supabaseAdmin
+    const { data: existing, error: existingError } = await supabase
       .from("product_variants")
       .select("id,updated_at")
       .eq("id", params.id)
@@ -37,7 +37,7 @@ export const PATCH = withAdminRoute<{ id: string }>(
     if (input.isAvailable !== undefined) updates.is_available = input.isAvailable;
     if (input.sortOrder !== undefined) updates.sort_order = input.sortOrder;
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from("product_variants")
       .update(updates)
       .eq("id", params.id)
@@ -52,4 +52,3 @@ export const PATCH = withAdminRoute<{ id: string }>(
     return jsonOk({ variant: data });
   },
 );
-

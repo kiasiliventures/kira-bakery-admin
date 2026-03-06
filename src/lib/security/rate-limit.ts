@@ -1,9 +1,5 @@
 import { tooManyRequests } from "@/lib/http/errors";
-
-type RateLimitRecord = {
-  count: number;
-  resetAt: number;
-};
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type RateLimitOptions = {
   key: string;
@@ -11,31 +7,21 @@ type RateLimitOptions = {
   windowMs: number;
 };
 
-declare global {
-  var __rateLimitStore: Map<string, RateLimitRecord> | undefined;
-}
-
-function getStore(): Map<string, RateLimitRecord> {
-  if (!global.__rateLimitStore) {
-    global.__rateLimitStore = new Map<string, RateLimitRecord>();
-  }
-  return global.__rateLimitStore;
-}
-
-export function enforceRateLimit(options: RateLimitOptions): void {
+export async function enforceRateLimit(options: RateLimitOptions): Promise<void> {
   const { key, limit, windowMs } = options;
-  const now = Date.now();
-  const store = getStore();
+  const supabaseAdmin = createSupabaseAdminClient();
+  const { data, error } = await supabaseAdmin.rpc("consume_admin_rate_limit", {
+    rate_key: key,
+    max_requests: limit,
+    window_seconds: Math.ceil(windowMs / 1000),
+  });
 
-  const current = store.get(key);
-  if (!current || current.resetAt <= now) {
-    store.set(key, { count: 1, resetAt: now + windowMs });
-    return;
+  if (error) {
+    throw new Error(`Rate limit check failed: ${error.message}`);
   }
 
-  if (current.count >= limit) {
-    throw tooManyRequests("Rate limit exceeded");
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result?.allowed) {
+    throw tooManyRequests("Rate limit exceeded", result?.retry_after_seconds);
   }
-
-  store.set(key, { ...current, count: current.count + 1 });
 }

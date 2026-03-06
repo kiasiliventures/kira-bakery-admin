@@ -12,9 +12,21 @@ export function jsonOk<T>(data: T, status = 200): NextResponse<ApiSuccess<T>> {
 }
 
 export function jsonError(error: AppError): NextResponse<ApiFailure> {
+  const retryAfterSeconds =
+    error.status === 429 &&
+    error.details &&
+    typeof error.details === "object" &&
+    "retryAfterSeconds" in error.details &&
+    typeof error.details.retryAfterSeconds === "number"
+      ? error.details.retryAfterSeconds
+      : undefined;
+
   return NextResponse.json(
     { ok: false, error: { code: error.code, message: error.message } },
-    { status: error.status },
+    {
+      status: error.status,
+      headers: retryAfterSeconds ? { "Retry-After": String(retryAfterSeconds) } : undefined,
+    },
   );
 }
 
@@ -33,4 +45,3 @@ export function mapUnknownError(error: unknown, context: string): AppError {
   });
   return internalError();
 }
-

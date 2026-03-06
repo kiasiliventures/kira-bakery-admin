@@ -3,7 +3,14 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { orderStatusPatchSchema } from "@/lib/schemas/admin";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+function toLegacyOrderStatus(status: string): string {
+  if (status === "Pending") return "pending";
+  if (status === "In Progress") return "preparing";
+  if (status === "Ready") return "ready_for_pickup";
+  return "completed";
+}
 
 export const PATCH = withAdminRoute<{ id: string }>(
   {
@@ -13,22 +20,70 @@ export const PATCH = withAdminRoute<{ id: string }>(
   },
   async (request, { params }) => {
     const input = await parseJsonBody(request, orderStatusPatchSchema);
-    const supabaseAdmin = createSupabaseAdminClient();
+    const supabase = await createSupabaseServerClient();
 
-    const { data: existing, error: existingError } = await supabaseAdmin
+    const modern = await supabase
+      .from("orders")
+      .select("id,status,updated_at")
+      .eq("id", params.id)
+      .maybeSingle();
+
+    if (modern.error?.code !== "42703") {
+      if (modern.error) {
+        throw new Error(`Order lookup failed: ${modern.error.message}`);
+      }
+
+      const existing = modern.data;
+      if (!existing) {
+        throw notFound("Order not found");
+      }
+
+      if (existing.status === input.orderStatus) {
+        return jsonOk({
+          order: existing,
+          idempotent: true,
+        });
+      }
+
+      if (existing.updated_at !== input.updatedAt) {
+        throw conflict("Order was modified concurrently");
+      }
+
+      const { data, error } = await supabase
+        .from("orders")
+        .update({
+          status: input.orderStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", params.id)
+        .eq("updated_at", input.updatedAt)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw new Error(`Order status update failed: ${error.message}`);
+      }
+
+      return jsonOk({ order: data, idempotent: false });
+    }
+
+    const legacy = await supabase
       .from("orders")
       .select("id,order_status,updated_at")
       .eq("id", params.id)
       .maybeSingle();
 
-    if (existingError) {
-      throw new Error(`Order lookup failed: ${existingError.message}`);
+    if (legacy.error) {
+      throw new Error(`Order lookup failed: ${legacy.error.message}`);
     }
+
+    const existing = legacy.data;
     if (!existing) {
       throw notFound("Order not found");
     }
 
-    if (existing.order_status === input.orderStatus) {
+    const nextLegacyStatus = toLegacyOrderStatus(input.orderStatus);
+    if (existing.order_status === nextLegacyStatus) {
       return jsonOk({
         order: existing,
         idempotent: true,
@@ -39,10 +94,10 @@ export const PATCH = withAdminRoute<{ id: string }>(
       throw conflict("Order was modified concurrently");
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from("orders")
       .update({
-        order_status: input.orderStatus,
+        order_status: nextLegacyStatus,
         updated_at: new Date().toISOString(),
       })
       .eq("id", params.id)
@@ -57,4 +112,3 @@ export const PATCH = withAdminRoute<{ id: string }>(
     return jsonOk({ order: data, idempotent: false });
   },
 );
-

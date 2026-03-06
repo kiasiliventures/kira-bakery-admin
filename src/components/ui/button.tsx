@@ -6,18 +6,18 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 disabled:pointer-events-none disabled:opacity-60",
+  "inline-flex h-10 items-center justify-center gap-2 rounded-[12px] px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kira-red/30 disabled:pointer-events-none disabled:opacity-60",
   {
     variants: {
       variant: {
-        default: "bg-indigo-600 text-white hover:bg-indigo-500",
-        outline: "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50",
+        default: "bg-kira-red text-white hover:bg-kira-red-hover active:bg-kira-red-active",
+        outline: "border border-kira-border bg-white text-slate-800 hover:bg-slate-100",
         ghost: "text-slate-700 hover:bg-slate-100",
-        destructive: "bg-red-600 text-white hover:bg-red-500",
+        destructive: "bg-red-600 text-white hover:bg-red-700",
       },
       size: {
         default: "h-10 px-4",
-        sm: "h-9 px-3",
+        sm: "h-9 rounded-[10px] px-3",
         lg: "h-11 px-6",
         icon: "h-10 w-10",
       },
@@ -50,4 +50,3 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 
 Button.displayName = "Button";
-
