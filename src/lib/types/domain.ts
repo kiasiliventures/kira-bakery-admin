@@ -55,17 +55,22 @@ export type Order = {
   total_ugx: number;
   created_at: string;
   updated_at: string;
+  items: OrderItem[];
 };
 
 export type OrderItem = {
   id: string;
   order_id: string;
   product_id: string | null;
+  variant_id: string | null;
   name: string;
   image: string;
   price_ugx: number;
+  price_at_time: number | null;
   quantity: number;
   selected_size: string | null;
   selected_flavor: string | null;
+  product_name: string | null;
+  variant_name: string | null;
   created_at: string;
 };
