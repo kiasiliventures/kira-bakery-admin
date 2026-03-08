@@ -32,7 +32,7 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
 
-  useOrdersRealtime({ showNewOrderToast: true });
+  useOrdersRealtime({ source: "DashboardRecentOrders" });
 
   const recentOrders = orders.slice(0, 6);
 

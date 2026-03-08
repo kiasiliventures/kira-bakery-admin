@@ -24,7 +24,7 @@ export function OrderStatusManager({ orders, canUpdateStatus }: Props) {
   const [status, setStatus] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
-  useOrdersRealtime({ showNewOrderToast: true });
+  useOrdersRealtime({ source: "OrderStatusManager", showNewOrderToast: true });
 
   const updateStatus = async (order: Order, nextStatus: Order["status"]) => {
     if (!canUpdateStatus) return;
