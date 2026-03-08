@@ -58,9 +58,9 @@ export const variantPatchSchema = z.object({
 export const orderStatusPatchSchema = z.object({
   orderStatus: z.enum([
     "Pending",
-    "In Progress",
+    "Approved",
     "Ready",
-    "Delivered",
+    "Cancelled",
   ]),
   updatedAt: isoTimestampSchema,
 });

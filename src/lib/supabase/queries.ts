@@ -98,12 +98,39 @@ function sortOrderItems(items: OrderItemRelation[] | null | undefined): OrderIte
     .map(mapOrderItem);
 }
 
-function mapLegacyOrderStatus(status: string): Order["status"] {
-  if (status === "pending" || status === "confirmed") return "Pending";
-  if (status === "preparing" || status === "out_for_delivery") return "In Progress";
-  if (status === "ready_for_pickup") return "Ready";
-  if (status === "cancelled") return "Cancelled";
-  return "Delivered";
+function normalizeOrderStatus(status: string | null | undefined): Order["status"] {
+  if (!status) return "Pending";
+
+  if (status === "Pending" || status === "pending" || status === "confirmed") {
+    return "Pending";
+  }
+
+  if (
+    status === "Approved" ||
+    status === "approved" ||
+    status === "In Progress" ||
+    status === "preparing" ||
+    status === "out_for_delivery"
+  ) {
+    return "Approved";
+  }
+
+  if (
+    status === "Ready" ||
+    status === "ready" ||
+    status === "ready_for_pickup" ||
+    status === "Delivered" ||
+    status === "completed" ||
+    status === "delivered"
+  ) {
+    return "Ready";
+  }
+
+  if (status === "Cancelled" || status === "cancelled") {
+    return "Cancelled";
+  }
+
+  return "Pending";
 }
 
 export async function getDashboardMetrics() {
@@ -184,7 +211,7 @@ export async function getOrders(): Promise<Order[]> {
       delivery_method: order.delivery_address ? "delivery" : "pickup",
       delivery_date: null,
       notes: null,
-      status: mapLegacyOrderStatus(order.order_status),
+      status: normalizeOrderStatus(order.order_status),
       total_ugx: Math.round(Number(order.total_price)),
       created_at: order.created_at,
       updated_at: order.updated_at,
@@ -194,7 +221,7 @@ export async function getOrders(): Promise<Order[]> {
 
   return ((modern.data ?? []) as ModernOrderRowWithItems[]).map((order) => ({
     ...order,
-    status: (order.status ?? "Pending") as Order["status"],
+    status: normalizeOrderStatus(order.status),
     items: sortOrderItems(order.order_items),
   }));
 }

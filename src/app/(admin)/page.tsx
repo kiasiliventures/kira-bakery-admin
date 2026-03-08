@@ -1,8 +1,7 @@
+import { DashboardRecentOrders } from "@/components/admin/dashboard-recent-orders";
 import { MetricCard } from "@/components/admin/metric-card";
 import { PageShell } from "@/components/admin/page-shell";
-import { StatusPill } from "@/components/admin/status-pill";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { guardPage } from "@/lib/auth/page-guard";
 import { getDashboardMetrics, getOrders, getProducts } from "@/lib/supabase/queries";
 
@@ -14,7 +13,7 @@ const currencyFormatter = new Intl.NumberFormat("en-UG", {
 });
 
 export default async function DashboardPage() {
-  await guardPage(["admin", "manager", "staff"]);
+  const identity = await guardPage(["admin", "manager", "staff"]);
   const [metrics, orders, products] = await Promise.all([
     getDashboardMetrics(),
     getOrders(),
@@ -23,8 +22,11 @@ export default async function DashboardPage() {
 
   const pendingCount = orders.filter((order) => order.status === "Pending").length;
   const totalRevenue = orders.reduce((sum, order) => sum + order.total_ugx, 0);
-  const recentOrders = orders.slice(0, 6);
   const latestProducts = products.slice(0, 4);
+  const canUpdateStatus =
+    identity.profile.role === "admin" ||
+    identity.profile.role === "manager" ||
+    identity.profile.role === "staff";
 
   return (
     <PageShell title="Dashboard Overview">
@@ -41,38 +43,7 @@ export default async function DashboardPage() {
             <CardTitle>Recent Orders</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Order ID</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentOrders.map((order) => {
-                    return (
-                      <TableRow key={order.id}>
-                        <TableCell className="font-medium text-slate-800">{order.id}</TableCell>
-                        <TableCell>{order.customer_name}</TableCell>
-                        <TableCell>
-                          {order.status === "Cancelled" ? (
-                            <span className="inline-flex rounded-[10px] bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700">
-                              Cancelled
-                            </span>
-                          ) : (
-                            <StatusPill status={order.status} />
-                          )}
-                        </TableCell>
-                        <TableCell>{currencyFormatter.format(order.total_ugx)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+            <DashboardRecentOrders orders={orders} canUpdateStatus={canUpdateStatus} />
           </CardContent>
         </Card>
 

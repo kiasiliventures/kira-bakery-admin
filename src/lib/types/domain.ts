@@ -51,7 +51,7 @@ export type Order = {
   delivery_method: "delivery" | "pickup" | null;
   delivery_date: string | null;
   notes: string | null;
-  status: "Pending" | "In Progress" | "Ready" | "Delivered" | "Cancelled";
+  status: "Pending" | "Approved" | "Ready" | "Cancelled";
   total_ugx: number;
   created_at: string;
   updated_at: string;

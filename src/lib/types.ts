@@ -1,7 +1,14 @@
 export type ProductStatus = "Available" | "Out of Stock";
-export type OrderStatus = "Pending" | "In Progress" | "Ready" | "Delivered" | "Cancelled";
+export type OrderStatus =
+  | "Pending"
+  | "Approved"
+  | "Ready"
+  | "Cancelled"
+  | "In Progress"
+  | "Delivered";
 export type StatusPillType =
   | "Pending"
+  | "Approved"
   | "In Progress"
   | "Ready"
   | "Delivered"

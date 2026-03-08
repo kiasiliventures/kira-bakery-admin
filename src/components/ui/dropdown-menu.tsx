@@ -22,6 +22,7 @@ export function DropdownMenu({ children }: { children: React.ReactNode }) {
 export function DropdownMenuTrigger({
   className,
   children,
+  onClick,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const context = React.useContext(DropdownContext);
@@ -30,7 +31,11 @@ export function DropdownMenuTrigger({
     <button
       type="button"
       className={className}
-      onClick={() => context.setOpen(!context.open)}
+      onClick={(event) => {
+        onClick?.(event);
+        if (event.defaultPrevented) return;
+        context.setOpen(!context.open);
+      }}
       {...props}
     >
       {children}
@@ -42,8 +47,8 @@ export function DropdownMenuContent({
   className,
   align = "end",
   children,
-}: {
-  className?: string;
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & {
   align?: "start" | "end";
   children: React.ReactNode;
 }) {
@@ -71,6 +76,7 @@ export function DropdownMenuContent({
         align === "end" ? "right-0" : "left-0",
         className,
       )}
+      {...props}
     >
       {children}
     </div>

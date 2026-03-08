@@ -1,15 +1,24 @@
-import { conflict, notFound } from "@/lib/http/errors";
+import { badRequest, conflict, notFound } from "@/lib/http/errors";
 import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { orderStatusPatchSchema } from "@/lib/schemas/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-function toLegacyOrderStatus(status: string): string {
-  if (status === "Pending") return "pending";
-  if (status === "In Progress") return "preparing";
-  if (status === "Ready") return "ready_for_pickup";
-  return "completed";
+function mapTransitionError(message: string) {
+  if (message.includes("order not found")) {
+    return notFound("Order not found");
+  }
+
+  if (message.includes("concurrently")) {
+    return conflict("Order was modified concurrently");
+  }
+
+  if (message.includes("insufficient stock")) {
+    return conflict("Insufficient stock to approve this order");
+  }
+
+  return badRequest(message);
 }
 
 export const PATCH = withAdminRoute<{ id: string }>(
@@ -22,93 +31,20 @@ export const PATCH = withAdminRoute<{ id: string }>(
     const input = await parseJsonBody(request, orderStatusPatchSchema);
     const supabase = await createSupabaseServerClient();
 
-    const modern = await supabase
-      .from("orders")
-      .select("id,status,updated_at")
-      .eq("id", params.id)
-      .maybeSingle();
+    const { data, error } = await supabase.rpc("admin_transition_order_status", {
+      p_order_id: params.id,
+      p_next_status: input.orderStatus,
+      p_expected_updated_at: input.updatedAt,
+    });
 
-    if (modern.error?.code !== "42703") {
-      if (modern.error) {
-        throw new Error(`Order lookup failed: ${modern.error.message}`);
-      }
-
-      const existing = modern.data;
-      if (!existing) {
-        throw notFound("Order not found");
-      }
-
-      if (existing.status === input.orderStatus) {
-        return jsonOk({
-          order: existing,
-          idempotent: true,
-        });
-      }
-
-      if (existing.updated_at !== input.updatedAt) {
-        throw conflict("Order was modified concurrently");
-      }
-
-      const { data, error } = await supabase
-        .from("orders")
-        .update({
-          status: input.orderStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", params.id)
-        .eq("updated_at", input.updatedAt)
-        .select("*")
-        .single();
-
-      if (error) {
-        throw new Error(`Order status update failed: ${error.message}`);
-      }
-
-      return jsonOk({ order: data, idempotent: false });
+    if (error) {
+      throw mapTransitionError(error.message);
     }
 
-    const legacy = await supabase
-      .from("orders")
-      .select("id,order_status,updated_at")
-      .eq("id", params.id)
-      .maybeSingle();
-
-    if (legacy.error) {
-      throw new Error(`Order lookup failed: ${legacy.error.message}`);
-    }
-
-    const existing = legacy.data;
-    if (!existing) {
+    if (!data) {
       throw notFound("Order not found");
     }
 
-    const nextLegacyStatus = toLegacyOrderStatus(input.orderStatus);
-    if (existing.order_status === nextLegacyStatus) {
-      return jsonOk({
-        order: existing,
-        idempotent: true,
-      });
-    }
-
-    if (existing.updated_at !== input.updatedAt) {
-      throw conflict("Order was modified concurrently");
-    }
-
-    const { data, error } = await supabase
-      .from("orders")
-      .update({
-        order_status: nextLegacyStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", params.id)
-      .eq("updated_at", input.updatedAt)
-      .select("*")
-      .single();
-
-    if (error) {
-      throw new Error(`Order status update failed: ${error.message}`);
-    }
-
-    return jsonOk({ order: data, idempotent: false });
+    return jsonOk({ order: data });
   },
 );
