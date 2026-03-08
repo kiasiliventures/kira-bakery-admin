@@ -15,6 +15,7 @@ export const categoryPatchSchema = z.object({
 });
 
 export const productCreateSchema = z.object({
+  clientRequestId: z.string().trim().min(1).max(120).optional(),
   categoryId: uuidSchema,
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().max(1000).optional().or(z.literal("")),
@@ -24,6 +25,10 @@ export const productCreateSchema = z.object({
   isAvailable: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
   isPublished: z.boolean().default(true),
+});
+
+export const productBatchCreateSchema = z.object({
+  products: z.array(productCreateSchema).min(1).max(25),
 });
 
 export const productPatchSchema = z.object({
@@ -72,6 +77,7 @@ export const userRolePatchSchema = z.object({
 export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;
 export type CategoryPatchInput = z.infer<typeof categoryPatchSchema>;
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
+export type ProductBatchCreateInput = z.infer<typeof productBatchCreateSchema>;
 export type ProductPatchInput = z.infer<typeof productPatchSchema>;
 export type VariantCreateInput = z.infer<typeof variantCreateSchema>;
 export type VariantPatchInput = z.infer<typeof variantPatchSchema>;
