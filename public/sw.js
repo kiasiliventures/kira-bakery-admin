@@ -3,10 +3,7 @@ const OFFLINE_URL = "/offline";
 const APP_ASSETS = [
   OFFLINE_URL,
   "/manifest.webmanifest",
-  "/icons/icon-192.svg",
-  "/icons/icon-512.svg",
-  "/icons/icon-maskable.svg",
-  "/icons/apple-touch-icon.svg",
+  "/icons/kira_bakery_icon.svg",
 ];
 
 self.addEventListener("install", (event) => {

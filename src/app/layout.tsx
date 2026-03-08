@@ -12,11 +12,10 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
-      { url: "/icons/icon-192.svg", type: "image/svg+xml" },
-      { url: "/icons/icon-512.svg", type: "image/svg+xml" },
+      { url: "/icons/kira_bakery_icon.svg", type: "image/svg+xml" },
     ],
-    apple: [{ url: "/icons/apple-touch-icon.svg", type: "image/svg+xml" }],
-    shortcut: ["/icons/icon-192.svg"],
+    apple: [{ url: "/icons/kira_bakery_icon.svg", type: "image/svg+xml" }],
+    shortcut: ["/icons/kira_bakery_icon.svg"],
   },
   appleWebApp: {
     capable: true,
