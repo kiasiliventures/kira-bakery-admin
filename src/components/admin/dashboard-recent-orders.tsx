@@ -15,11 +15,25 @@ import {
 import {
   formatDeliveryMethod,
   formatOrderReference,
+  getPrimaryOrderAction,
   orderCurrencyFormatter,
   patchOrderStatus,
+  reverifyOrderPayment,
 } from "@/lib/orders";
 import { cn } from "@/lib/utils";
 import type { Order } from "@/lib/types/domain";
+
+function formatPaymentStatus(value: string | null): string {
+  if (!value) {
+    return "Pending";
+  }
+
+  return value
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
 type Props = {
   orders: Order[];
@@ -36,8 +50,9 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
 
   const recentOrders = orders.slice(0, 6);
 
-  const handleAction = async (order: Order, nextStatus: Extract<Order["status"], "Approved" | "Cancelled">) => {
-    if (!canUpdateStatus || order.status !== "Pending") {
+  const handleAction = async (order: Order) => {
+    const action = getPrimaryOrderAction(order);
+    if (!canUpdateStatus || !action || (action.type === "reverify" && action.disabled)) {
       return;
     }
 
@@ -45,10 +60,15 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
     setStatusMessage("");
 
     try {
-      await patchOrderStatus(order, nextStatus);
+      if (action.type === "reverify") {
+        await reverifyOrderPayment(order);
+      } else {
+        await patchOrderStatus(order, action.nextStatus);
+      }
+
       router.refresh();
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Failed to update order status");
+      setStatusMessage(error instanceof Error ? error.message : "Failed to update order");
     } finally {
       setLoadingId(null);
     }
@@ -62,8 +82,9 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
     <div className="space-y-3">
       {recentOrders.map((order) => {
         const isExpanded = expandedId === order.id;
-        const isPending = order.status === "Pending";
         const isLoading = loadingId === order.id;
+        const primaryAction = getPrimaryOrderAction(order);
+        const actionDisabled = !canUpdateStatus || !primaryAction || (primaryAction.type === "reverify" && primaryAction.disabled);
 
         return (
           <article key={order.id} className="rounded-xl border border-slate-200 bg-white">
@@ -112,25 +133,14 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   onClick={(event) => event.stopPropagation()}
-                  className="w-40"
+                  className="w-56"
                 >
                   <DropdownMenuItem
-                    disabled={!isPending || !canUpdateStatus || isLoading}
-                    className={!isPending || !canUpdateStatus ? "text-slate-400 hover:bg-white" : undefined}
-                    onClick={() => void handleAction(order, "Approved")}
+                    disabled={actionDisabled || isLoading}
+                    className={actionDisabled ? "text-slate-400 hover:bg-white" : undefined}
+                    onClick={() => void handleAction(order)}
                   >
-                    Approve
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={!isPending || !canUpdateStatus || isLoading}
-                    className={
-                      !isPending || !canUpdateStatus
-                        ? "text-slate-400 hover:bg-white"
-                        : "text-rose-700 hover:bg-rose-50"
-                    }
-                    onClick={() => void handleAction(order, "Cancelled")}
-                  >
-                    Cancel
+                    {primaryAction?.label ?? "No actions available"}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -145,7 +155,7 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
               <div className="overflow-hidden">
                 <div className="border-t border-slate-200 px-3 pb-4 pt-3 sm:px-4">
                   <OrderItemsList items={order.items} />
-                  <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                  <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-3">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                       <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
                         Fulfillment
@@ -159,8 +169,25 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
                         {formatDeliveryMethod(order.delivery_method)}
                       </p>
                     </div>
-                    {order.delivery_method === "delivery" && order.address ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                        Payment
+                      </p>
+                      <p className="mt-1 text-slate-800">{formatPaymentStatus(order.payment_status)}</p>
+                      {order.paid_at ? (
+                        <p className="mt-1 text-xs text-slate-500">Paid at {new Date(order.paid_at).toLocaleString()}</p>
+                      ) : null}
+                    </div>
+                    {order.order_tracking_id ? (
                       <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                          Tracking ID
+                        </p>
+                        <p className="mt-1 break-all text-slate-800">{order.order_tracking_id}</p>
+                      </div>
+                    ) : null}
+                    {order.delivery_method === "delivery" && order.address ? (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 sm:col-span-2 xl:col-span-3">
                         <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
                           Address
                         </p>

@@ -2,15 +2,23 @@ export type ProductStatus = "Available" | "Out of Stock";
 export type OrderStatus =
   | "Pending"
   | "Approved"
+  | "Pending Payment"
+  | "Paid"
   | "Ready"
+  | "Completed"
+  | "Payment Failed"
   | "Cancelled"
   | "In Progress"
   | "Delivered";
 export type StatusPillType =
   | "Pending"
   | "Approved"
+  | "Pending Payment"
+  | "Paid"
   | "In Progress"
   | "Ready"
+  | "Completed"
+  | "Payment Failed"
   | "Delivered"
   | "Cancelled"
   | "Out of Stock"

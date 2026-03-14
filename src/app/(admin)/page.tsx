@@ -20,7 +20,7 @@ export default async function DashboardPage() {
     getProducts(),
   ]);
 
-  const pendingCount = orders.filter((order) => order.status === "Pending").length;
+  const pendingCount = orders.filter((order) => order.status === "Pending Payment").length;
   const totalRevenue = orders.reduce((sum, order) => sum + order.total_ugx, 0);
   const latestProducts = products.slice(0, 4);
   const canUpdateStatus =
@@ -32,7 +32,7 @@ export default async function DashboardPage() {
     <PageShell title="Dashboard Overview">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Total Orders" value={String(metrics.orderCount)} trendLine={trend} />
-        <MetricCard title="Pending Orders" value={String(pendingCount)} trendLine={trend} />
+        <MetricCard title="Pending Payment" value={String(pendingCount)} trendLine={trend} />
         <MetricCard title="Total Revenue" value={currencyFormatter.format(totalRevenue)} trendLine={trend} />
         <MetricCard title="Total Products" value={String(metrics.productCount)} trendLine={trend} />
       </div>

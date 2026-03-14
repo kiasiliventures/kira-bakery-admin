@@ -7,14 +7,49 @@ export const orderCurrencyFormatter = new Intl.NumberFormat("en-UG", {
 });
 
 const orderStatusOptions: Record<Order["status"], Order["status"][]> = {
-  Pending: ["Pending", "Approved", "Cancelled"],
-  Approved: ["Approved", "Ready"],
-  Ready: ["Ready"],
+  "Pending Payment": ["Pending Payment"],
+  Paid: ["Paid", "Ready"],
+  Ready: ["Ready", "Completed"],
+  Completed: ["Completed"],
+  "Payment Failed": ["Payment Failed"],
   Cancelled: ["Cancelled"],
 };
 
 export function getOrderStatusOptions(status: Order["status"]): Order["status"][] {
   return orderStatusOptions[status];
+}
+
+export function getPrimaryOrderAction(
+  order: Pick<Order, "status" | "order_tracking_id">,
+):
+  | { type: "reverify"; label: string; disabled: boolean }
+  | { type: "transition"; label: string; nextStatus: Extract<Order["status"], "Ready" | "Completed"> }
+  | null {
+  if (order.status === "Pending Payment") {
+    return {
+      type: "reverify",
+      label: "Reverify payment status",
+      disabled: !order.order_tracking_id,
+    };
+  }
+
+  if (order.status === "Paid") {
+    return {
+      type: "transition",
+      label: "Mark ready",
+      nextStatus: "Ready",
+    };
+  }
+
+  if (order.status === "Ready") {
+    return {
+      type: "transition",
+      label: "Mark completed",
+      nextStatus: "Completed",
+    };
+  }
+
+  return null;
 }
 
 export function formatOrderReference(orderId: string): string {
@@ -81,5 +116,25 @@ export async function patchOrderStatus(
 
   if (!response.ok) {
     throw new Error(payload?.error?.message ?? "Failed to update order status");
+  }
+}
+
+export async function reverifyOrderPayment(
+  order: Pick<Order, "id" | "updated_at">,
+): Promise<void> {
+  const response = await fetch(`/api/admin/orders/${order.id}/reverify-payment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      updatedAt: order.updated_at,
+    }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { error?: { message?: string } }
+    | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error?.message ?? "Failed to reverify payment status");
   }
 }

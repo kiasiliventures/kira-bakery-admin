@@ -51,7 +51,17 @@ export type Order = {
   delivery_method: "delivery" | "pickup" | null;
   delivery_date: string | null;
   notes: string | null;
-  status: "Pending" | "Approved" | "Ready" | "Cancelled";
+  status:
+    | "Pending Payment"
+    | "Paid"
+    | "Ready"
+    | "Completed"
+    | "Payment Failed"
+    | "Cancelled";
+  payment_status: string | null;
+  order_tracking_id: string | null;
+  paid_at: string | null;
+  inventory_deducted_at: string | null;
   total_ugx: number;
   created_at: string;
   updated_at: string;

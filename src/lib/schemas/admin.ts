@@ -62,11 +62,14 @@ export const variantPatchSchema = z.object({
 
 export const orderStatusPatchSchema = z.object({
   orderStatus: z.enum([
-    "Pending",
-    "Approved",
     "Ready",
+    "Completed",
     "Cancelled",
   ]),
+  updatedAt: isoTimestampSchema,
+});
+
+export const orderPaymentReverifySchema = z.object({
   updatedAt: isoTimestampSchema,
 });
 
@@ -82,4 +85,5 @@ export type ProductPatchInput = z.infer<typeof productPatchSchema>;
 export type VariantCreateInput = z.infer<typeof variantCreateSchema>;
 export type VariantPatchInput = z.infer<typeof variantPatchSchema>;
 export type OrderStatusPatchInput = z.infer<typeof orderStatusPatchSchema>;
+export type OrderPaymentReverifyInput = z.infer<typeof orderPaymentReverifySchema>;
 export type UserRolePatchInput = z.infer<typeof userRolePatchSchema>;

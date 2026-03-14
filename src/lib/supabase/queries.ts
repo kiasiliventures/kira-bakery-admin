@@ -32,7 +32,24 @@ type OrderItemRelation = {
   product_variants?: { name: string | null } | Array<{ name: string | null }> | null;
 };
 
-type ModernOrderRowWithItems = Omit<Order, "items"> & {
+type ModernOrderRowWithItems = {
+  id: string;
+  customer_id: string | null;
+  customer_name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  delivery_method: "delivery" | "pickup" | null;
+  delivery_date: string | null;
+  notes: string | null;
+  status: string;
+  payment_status: string | null;
+  order_tracking_id: string | null;
+  paid_at: string | null;
+  inventory_deducted_at: string | null;
+  total_ugx: number;
+  created_at: string;
+  updated_at: string;
   order_items: OrderItemRelation[] | null;
 };
 
@@ -98,39 +115,78 @@ function sortOrderItems(items: OrderItemRelation[] | null | undefined): OrderIte
     .map(mapOrderItem);
 }
 
-function normalizeOrderStatus(status: string | null | undefined): Order["status"] {
-  if (!status) return "Pending";
+function normalizePaymentStatus(paymentStatus: string | null | undefined): string | null {
+  const normalized = paymentStatus?.trim().toLowerCase();
+  if (!normalized) return null;
 
-  if (status === "Pending" || status === "pending" || status === "confirmed") {
-    return "Pending";
+  if (normalized === "paid" || normalized === "completed") {
+    return "paid";
   }
 
   if (
-    status === "Approved" ||
-    status === "approved" ||
-    status === "In Progress" ||
-    status === "preparing" ||
-    status === "out_for_delivery"
+    normalized === "failed" ||
+    normalized === "payment_failed" ||
+    normalized === "reversed"
   ) {
-    return "Approved";
+    return "failed";
   }
 
   if (
-    status === "Ready" ||
-    status === "ready" ||
-    status === "ready_for_pickup" ||
-    status === "Delivered" ||
-    status === "completed" ||
-    status === "delivered"
+    normalized === "cancelled" ||
+    normalized === "canceled" ||
+    normalized === "invalid"
   ) {
+    return "cancelled";
+  }
+
+  if (normalized === "unpaid" || normalized === "pending") {
+    return "pending";
+  }
+
+  return normalized;
+}
+
+function normalizeOrderStatus(
+  status: string | null | undefined,
+  paymentStatus: string | null | undefined,
+): Order["status"] {
+  const normalizedStatus = status?.trim().toLowerCase();
+  const normalizedPaymentStatus = normalizePaymentStatus(paymentStatus);
+
+  if (normalizedStatus === "completed" || normalizedStatus === "delivered") {
+    return "Completed";
+  }
+
+  if (normalizedStatus === "ready" || normalizedStatus === "ready_for_pickup") {
     return "Ready";
   }
 
-  if (status === "Cancelled" || status === "cancelled") {
+  if (normalizedStatus === "cancelled" || normalizedPaymentStatus === "cancelled") {
     return "Cancelled";
   }
 
-  return "Pending";
+  if (
+    normalizedStatus === "payment failed" ||
+    normalizedStatus === "payment_failed" ||
+    normalizedStatus === "failed" ||
+    normalizedPaymentStatus === "failed"
+  ) {
+    return "Payment Failed";
+  }
+
+  if (
+    normalizedStatus === "paid" ||
+    normalizedStatus === "approved" ||
+    normalizedStatus === "in progress" ||
+    normalizedStatus === "approved" ||
+    normalizedStatus === "preparing" ||
+    normalizedStatus === "out_for_delivery" ||
+    normalizedPaymentStatus === "paid"
+  ) {
+    return "Paid";
+  }
+
+  return "Pending Payment";
 }
 
 export async function getDashboardMetrics() {
@@ -188,7 +244,7 @@ export async function getOrders(): Promise<Order[]> {
   const modern = await supabase
     .from("orders")
     .select(
-      "id,customer_id,customer_name,phone,email,address,delivery_method,delivery_date,notes,status,total_ugx,created_at,updated_at,order_items(id,order_id,product_id,variant_id,name,image,price_ugx,price_at_time,quantity,selected_size,selected_flavor,created_at,products(name),product_variants(name))",
+      "id,customer_id,customer_name,phone,email,address,delivery_method,delivery_date,notes,status,payment_status,order_tracking_id,paid_at,inventory_deducted_at,total_ugx,created_at,updated_at,order_items(id,order_id,product_id,variant_id,name,image,price_ugx,price_at_time,quantity,selected_size,selected_flavor,created_at,products(name),product_variants(name))",
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -211,7 +267,11 @@ export async function getOrders(): Promise<Order[]> {
       delivery_method: order.delivery_address ? "delivery" : "pickup",
       delivery_date: null,
       notes: null,
-      status: normalizeOrderStatus(order.order_status),
+      status: normalizeOrderStatus(order.order_status, order.payment_status),
+      payment_status: normalizePaymentStatus(order.payment_status),
+      order_tracking_id: null,
+      paid_at: null,
+      inventory_deducted_at: null,
       total_ugx: Math.round(Number(order.total_price)),
       created_at: order.created_at,
       updated_at: order.updated_at,
@@ -220,8 +280,23 @@ export async function getOrders(): Promise<Order[]> {
   }
 
   return ((modern.data ?? []) as ModernOrderRowWithItems[]).map((order) => ({
-    ...order,
-    status: normalizeOrderStatus(order.status),
+    id: order.id,
+    customer_id: order.customer_id,
+    customer_name: order.customer_name,
+    phone: order.phone,
+    email: order.email,
+    address: order.address,
+    delivery_method: order.delivery_method,
+    delivery_date: order.delivery_date,
+    notes: order.notes,
+    status: normalizeOrderStatus(order.status, order.payment_status),
+    payment_status: normalizePaymentStatus(order.payment_status),
+    order_tracking_id: sanitizeText(order.order_tracking_id),
+    paid_at: order.paid_at,
+    inventory_deducted_at: order.inventory_deducted_at,
+    total_ugx: order.total_ugx,
+    created_at: order.created_at,
+    updated_at: order.updated_at,
     items: sortOrderItems(order.order_items),
   }));
 }
