@@ -3,10 +3,7 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { logger } from "@/lib/logger";
-import {
-  getPesapalTransactionStatus,
-  normalizePesapalPaymentState,
-} from "@/lib/payments/pesapal";
+import { syncOrderPaymentViaStorefront } from "@/lib/payments/storefront";
 import { orderPaymentReverifySchema } from "@/lib/schemas/admin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -21,11 +18,6 @@ type OrderPaymentRow = {
   inventory_deducted_at: string | null;
   updated_at: string;
 };
-
-function normalizeStoredPaymentStatus(paymentStatus: string | null | undefined): string {
-  const normalized = paymentStatus?.trim().toLowerCase();
-  return normalized || "pending";
-}
 
 const orderSelection = [
   "id",
@@ -70,87 +62,86 @@ export const POST = withAdminRoute<{ id: string }>(
     }
 
     if (!order.order_tracking_id) {
-      throw badRequest("Order does not have a Pesapal tracking ID yet");
+      throw badRequest("Order does not have a payment tracking ID yet");
     }
 
     logger.info("admin_order_payment_reverify_start", {
       orderId: order.id,
       trackingId: order.order_tracking_id,
+      provider: order.payment_provider ?? "unknown",
       currentStatus: order.status,
       paymentStatus: order.payment_status,
     });
 
-    const providerStatus = await getPesapalTransactionStatus(order.order_tracking_id);
-    const normalizedProviderStatus = normalizePesapalPaymentState(providerStatus.payment_status_description);
-    const storedPaymentStatus = normalizeStoredPaymentStatus(order.payment_status);
+    const storefrontOrder = await syncOrderPaymentViaStorefront(order.id);
 
-    if (normalizedProviderStatus === "pending") {
+    const { data: updated, error: updatedError } = await supabaseAdmin
+      .from("orders")
+      .select(orderSelection)
+      .eq("id", params.id)
+      .maybeSingle();
+
+    if (updatedError) {
+      throw new Error(`Order payment refresh lookup failed: ${updatedError.message}`);
+    }
+
+    if (!updated) {
+      throw notFound("Order not found");
+    }
+
+    const updatedOrder = updated as unknown as OrderPaymentRow;
+    const wasUpdated =
+      updatedOrder.updated_at !== order.updated_at
+      || updatedOrder.payment_status !== order.payment_status
+      || updatedOrder.payment_reference !== order.payment_reference
+      || updatedOrder.paid_at !== order.paid_at
+      || updatedOrder.inventory_deducted_at !== order.inventory_deducted_at;
+
+    if (!wasUpdated && storefrontOrder.paymentStatus === "pending") {
       logger.info("admin_order_payment_reverify_pending", {
         orderId: order.id,
         trackingId: order.order_tracking_id,
-        providerStatus: providerStatus.payment_status_description ?? null,
+        providerStatus: storefrontOrder.providerStatus,
       });
 
       return jsonOk({
-        order,
-        providerStatus: providerStatus.payment_status_description ?? null,
-        paymentStatus: storedPaymentStatus,
+        order: updatedOrder,
+        providerStatus: storefrontOrder.providerStatus,
+        paymentStatus: storefrontOrder.paymentStatus,
         updated: false,
       });
     }
 
-    const nextPaymentStatus =
-      storedPaymentStatus === "paid" && normalizedProviderStatus !== "paid"
-        ? storedPaymentStatus
-        : normalizedProviderStatus;
-
-    const updates: Record<string, unknown> = {
-      payment_provider: "pesapal",
-      payment_status: nextPaymentStatus,
-      order_tracking_id: order.order_tracking_id,
-      updated_at: new Date().toISOString(),
-    };
-
-    if (providerStatus.confirmation_code) {
-      updates.payment_reference = providerStatus.confirmation_code;
-    }
-
-    if (nextPaymentStatus === "paid") {
-      updates.paid_at = order.paid_at ?? new Date().toISOString();
-    }
-
-    const { data: updated, error: updateError } = await supabaseAdmin
+    const { data: latest, error: latestError } = await supabaseAdmin
       .from("orders")
-      .update(updates)
-      .eq("id", params.id)
-      .eq("updated_at", input.updatedAt)
       .select(orderSelection)
+      .eq("id", params.id)
       .maybeSingle();
 
-    if (updateError) {
-      throw new Error(`Order payment update failed: ${updateError.message}`);
+    if (latestError) {
+      throw new Error(`Order payment lookup failed: ${latestError.message}`);
     }
 
-    if (!updated) {
-      throw conflict("Order was modified concurrently");
+    if (!latest) {
+      throw notFound("Order not found");
     }
 
-    const updatedOrder = updated as unknown as OrderPaymentRow;
+    const latestOrder = latest as unknown as OrderPaymentRow;
 
     logger.info("admin_order_payment_reverify_success", {
       orderId: params.id,
       trackingId: order.order_tracking_id,
-      storedPaymentStatus,
-      nextPaymentStatus,
-      providerStatus: providerStatus.payment_status_description ?? null,
-      inventoryDeductedAt: updatedOrder.inventory_deducted_at,
+      paymentStatus: latestOrder.payment_status,
+      providerStatus: storefrontOrder.providerStatus,
+      inventoryDeductedAt: latestOrder.inventory_deducted_at,
+      updated: wasUpdated,
     });
 
     return jsonOk({
-      order: updatedOrder,
-      providerStatus: providerStatus.payment_status_description ?? null,
-      paymentStatus: nextPaymentStatus,
-      updated: true,
+      order: latestOrder,
+      providerStatus: storefrontOrder.providerStatus,
+      paymentStatus: storefrontOrder.paymentStatus,
+      updated: wasUpdated,
     });
   },
 );
