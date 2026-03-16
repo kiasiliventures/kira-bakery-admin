@@ -27,7 +27,9 @@ function getStatusClassName(tone: StatusMessage["tone"]): string {
 export function ProductDetailManager({ product, categories, canManage }: Props) {
   const router = useRouter();
   const [status, setStatus] = useState<StatusMessage | null>(null);
-  const [actionState, setActionState] = useState<"idle" | "saving" | "deleting">("idle");
+  const [actionState, setActionState] = useState<"idle" | "saving" | "unpublishing" | "deleting">("idle");
+  const [isPublished, setIsPublished] = useState(product.is_published);
+  const [currentUpdatedAt, setCurrentUpdatedAt] = useState(product.updated_at);
   const [categoryId, setCategoryId] = useState(product.category_id);
   const [name, setName] = useState(product.name);
   const [description, setDescription] = useState(product.description ?? "");
@@ -84,7 +86,7 @@ export function ProductDetailManager({ product, categories, canManage }: Props) 
         description,
         basePrice: Number(basePrice),
         stockQuantity: Number(stockQuantity),
-        updatedAt: product.updated_at,
+        updatedAt: currentUpdatedAt,
       }),
     });
 
@@ -96,6 +98,12 @@ export function ProductDetailManager({ product, categories, canManage }: Props) 
       });
       setActionState("idle");
       return;
+    }
+
+    const updatedProduct = payload.data?.product as Product | undefined;
+    if (updatedProduct) {
+      setCurrentUpdatedAt(updatedProduct.updated_at);
+      setIsPublished(updatedProduct.is_published);
     }
 
     if (imageFile) {
@@ -121,6 +129,52 @@ export function ProductDetailManager({ product, categories, canManage }: Props) 
     setStatus({
       tone: "success",
       text: "Product changes saved.",
+    });
+    setActionState("idle");
+    router.refresh();
+  };
+
+  const unpublishProduct = async () => {
+    if (!canManage || !isPublished) return;
+
+    const confirmed = window.confirm(
+      "Unpublish this product? It will stop appearing in the client storefront but remain in the admin dashboard.",
+    );
+    if (!confirmed) return;
+
+    setActionState("unpublishing");
+    setStatus(null);
+
+    const response = await fetch(`/api/admin/products/${product.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        isPublished: false,
+        updatedAt: currentUpdatedAt,
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      setStatus({
+        tone: "error",
+        text: payload.error?.message ?? "Failed to unpublish product",
+      });
+      setActionState("idle");
+      return;
+    }
+
+    const updatedProduct = payload.data?.product as Product | undefined;
+    if (updatedProduct) {
+      setCurrentUpdatedAt(updatedProduct.updated_at);
+      setIsPublished(updatedProduct.is_published);
+    } else {
+      setIsPublished(false);
+    }
+
+    setStatus({
+      tone: "success",
+      text: "Product unpublished.",
     });
     setActionState("idle");
     router.refresh();
@@ -305,11 +359,21 @@ export function ProductDetailManager({ product, categories, canManage }: Props) 
           <div className="space-y-1">
             <p className="text-sm font-medium text-slate-900">Actions</p>
             <p className="text-sm text-slate-500">
-              Save product edits, or permanently remove this product from the catalog.
+              Save product edits, explicitly unpublish the product, or permanently remove it.
             </p>
           </div>
 
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={unpublishProduct}
+              loading={actionState === "unpublishing"}
+              disabled={!canManage || !isPublished || actionState !== "idle"}
+              className="sm:min-w-[160px]"
+            >
+              {isPublished ? "Unpublish Product" : "Already Unpublished"}
+            </Button>
             <Button
               type="button"
               variant="destructive"
@@ -331,6 +395,12 @@ export function ProductDetailManager({ product, categories, canManage }: Props) 
         </div>
 
         <div>
+          <p className="mb-3 text-sm text-slate-500">
+            Storefront status:{" "}
+            <span className="font-medium text-slate-900">
+              {isPublished ? "Published" : "Unpublished"}
+            </span>
+          </p>
           <Link
             href="/products"
             className="inline-flex h-10 items-center justify-center rounded-[12px] border border-kira-border bg-white px-4 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100"

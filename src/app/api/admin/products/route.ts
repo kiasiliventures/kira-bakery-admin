@@ -37,7 +37,8 @@ export const POST = withAdminRoute(
         stock_quantity: product.stockQuantity,
         is_available: product.isAvailable,
         is_featured: product.isFeatured,
-        is_published: product.isPublished,
+        // New products go live immediately; unpublishing is a separate edit action.
+        is_published: true,
         created_at: now,
         updated_at: now,
       };
