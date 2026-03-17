@@ -17,7 +17,7 @@ export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
       aria-checked={checked}
       onClick={() => onCheckedChange?.(!checked)}
       className={cn(
-        "relative h-6 w-11 rounded-full border transition-colors",
+        "relative h-6 w-11 overflow-hidden rounded-full border transition-colors",
         checked ? "border-kira-red bg-kira-red" : "border-kira-border bg-slate-200",
         className,
       )}
@@ -25,7 +25,7 @@ export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
     >
       <span
         className={cn(
-          "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
+          "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
           checked ? "translate-x-5" : "translate-x-0.5",
         )}
       />

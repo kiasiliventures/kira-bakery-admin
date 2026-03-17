@@ -1,13 +1,12 @@
-"use client";
-
 import Link from "next/link";
-import { ChevronDown, LayoutDashboard, Package, ClipboardList, Boxes } from "lucide-react";
+import { ChevronDown, LayoutDashboard, Package, ClipboardList, Boxes, BadgeDollarSign } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { LogoutButton } from "@/components/admin/logout-button";
 
 const links = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Products", icon: Package },
+  { href: "/cakes", label: "Cake Pricing", icon: BadgeDollarSign },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/orders", label: "Orders", icon: ClipboardList },
 ];
