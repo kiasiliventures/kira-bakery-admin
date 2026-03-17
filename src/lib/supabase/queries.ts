@@ -57,6 +57,12 @@ type LegacyOrderRowWithItems = LegacyOrderRow & {
   order_items: OrderItemRelation[] | null;
 };
 
+const modernOrderSelection =
+  "id,customer_id,customer_name,phone,email,address,delivery_method,delivery_date,notes,status,payment_status,order_tracking_id,paid_at,inventory_deducted_at,total_ugx,created_at,updated_at,order_items(id,order_id,product_id,variant_id,name,image,price_ugx,price_at_time,quantity,selected_size,selected_flavor,created_at,products(name),product_variants(name))";
+
+const legacyOrderSelection =
+  "id,customer_name,customer_phone,customer_email,delivery_address,order_status,payment_status,total_price,created_at,updated_at,order_items(id,order_id,product_id,variant_id,quantity,price_at_time,created_at,products(name),product_variants(name))";
+
 function sanitizeText(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -189,6 +195,51 @@ function normalizeOrderStatus(
   return "Pending Payment";
 }
 
+function mapLegacyOrder(order: LegacyOrderRowWithItems): Order {
+  return {
+    id: order.id,
+    customer_name: order.customer_name,
+    phone: order.customer_phone,
+    email: order.customer_email,
+    address: order.delivery_address,
+    delivery_method: order.delivery_address ? "delivery" : "pickup",
+    delivery_date: null,
+    notes: null,
+    status: normalizeOrderStatus(order.order_status, order.payment_status),
+    payment_status: normalizePaymentStatus(order.payment_status),
+    order_tracking_id: null,
+    paid_at: null,
+    inventory_deducted_at: null,
+    total_ugx: Math.round(Number(order.total_price)),
+    created_at: order.created_at,
+    updated_at: order.updated_at,
+    items: sortOrderItems(order.order_items),
+  };
+}
+
+function mapModernOrder(order: ModernOrderRowWithItems): Order {
+  return {
+    id: order.id,
+    customer_id: order.customer_id,
+    customer_name: order.customer_name,
+    phone: order.phone,
+    email: order.email,
+    address: order.address,
+    delivery_method: order.delivery_method,
+    delivery_date: order.delivery_date,
+    notes: order.notes,
+    status: normalizeOrderStatus(order.status, order.payment_status),
+    payment_status: normalizePaymentStatus(order.payment_status),
+    order_tracking_id: sanitizeText(order.order_tracking_id),
+    paid_at: order.paid_at,
+    inventory_deducted_at: order.inventory_deducted_at,
+    total_ugx: order.total_ugx,
+    created_at: order.created_at,
+    updated_at: order.updated_at,
+    items: sortOrderItems(order.order_items),
+  };
+}
+
 export async function getDashboardMetrics() {
   const supabase = await createSupabaseServerClient();
 
@@ -243,62 +294,58 @@ export async function getOrders(): Promise<Order[]> {
   const supabase = await createSupabaseServerClient();
   const modern = await supabase
     .from("orders")
-    .select(
-      "id,customer_id,customer_name,phone,email,address,delivery_method,delivery_date,notes,status,payment_status,order_tracking_id,paid_at,inventory_deducted_at,total_ugx,created_at,updated_at,order_items(id,order_id,product_id,variant_id,name,image,price_ugx,price_at_time,quantity,selected_size,selected_flavor,created_at,products(name),product_variants(name))",
-    )
+    .select(modernOrderSelection)
     .order("created_at", { ascending: false })
     .limit(100);
 
   if (modern.error?.code === "42703") {
     const legacy = await supabase
       .from("orders")
-      .select(
-        "id,customer_name,customer_phone,customer_email,delivery_address,order_status,payment_status,total_price,created_at,updated_at,order_items(id,order_id,product_id,variant_id,quantity,price_at_time,created_at,products(name),product_variants(name))",
-      )
+      .select(legacyOrderSelection)
       .order("created_at", { ascending: false })
       .limit(100);
 
-    return ((legacy.data ?? []) as LegacyOrderRowWithItems[]).map((order) => ({
-      id: order.id,
-      customer_name: order.customer_name,
-      phone: order.customer_phone,
-      email: order.customer_email,
-      address: order.delivery_address,
-      delivery_method: order.delivery_address ? "delivery" : "pickup",
-      delivery_date: null,
-      notes: null,
-      status: normalizeOrderStatus(order.order_status, order.payment_status),
-      payment_status: normalizePaymentStatus(order.payment_status),
-      order_tracking_id: null,
-      paid_at: null,
-      inventory_deducted_at: null,
-      total_ugx: Math.round(Number(order.total_price)),
-      created_at: order.created_at,
-      updated_at: order.updated_at,
-      items: sortOrderItems(order.order_items),
-    }));
+    return ((legacy.data ?? []) as LegacyOrderRowWithItems[]).map(mapLegacyOrder);
   }
 
-  return ((modern.data ?? []) as ModernOrderRowWithItems[]).map((order) => ({
-    id: order.id,
-    customer_id: order.customer_id,
-    customer_name: order.customer_name,
-    phone: order.phone,
-    email: order.email,
-    address: order.address,
-    delivery_method: order.delivery_method,
-    delivery_date: order.delivery_date,
-    notes: order.notes,
-    status: normalizeOrderStatus(order.status, order.payment_status),
-    payment_status: normalizePaymentStatus(order.payment_status),
-    order_tracking_id: sanitizeText(order.order_tracking_id),
-    paid_at: order.paid_at,
-    inventory_deducted_at: order.inventory_deducted_at,
-    total_ugx: order.total_ugx,
-    created_at: order.created_at,
-    updated_at: order.updated_at,
-    items: sortOrderItems(order.order_items),
-  }));
+  return ((modern.data ?? []) as ModernOrderRowWithItems[]).map(mapModernOrder);
+}
+
+export async function getOrderById(id: string): Promise<Order | null> {
+  const supabase = await createSupabaseServerClient();
+  const modern = await supabase
+    .from("orders")
+    .select(modernOrderSelection)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (modern.error?.code === "42703") {
+    const legacy = await supabase
+      .from("orders")
+      .select(legacyOrderSelection)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (legacy.error) {
+      throw new Error(`Failed to load order: ${legacy.error.message}`);
+    }
+
+    if (!legacy.data) {
+      return null;
+    }
+
+    return mapLegacyOrder(legacy.data as LegacyOrderRowWithItems);
+  }
+
+  if (modern.error) {
+    throw new Error(`Failed to load order: ${modern.error.message}`);
+  }
+
+  if (!modern.data) {
+    return null;
+  }
+
+  return mapModernOrder(modern.data as ModernOrderRowWithItems);
 }
 
 export async function getOrderItemsByOrderIds(orderIds: string[]): Promise<OrderItem[]> {

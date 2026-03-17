@@ -3,7 +3,7 @@
 import { useEffect, useEffectEvent, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
-import { subscribeToOrdersRealtime } from "@/lib/orders-realtime";
+import { subscribeToOrdersRealtime, type OrdersRealtimeEvent } from "@/lib/orders-realtime";
 
 const REFRESH_DEBOUNCE_MS = 120;
 
@@ -11,6 +11,12 @@ type Options = {
   source: string;
   showNewOrderToast?: boolean;
   newOrderToastTitle?: string;
+  autoRefresh?: boolean;
+  refreshOnFallback?: boolean;
+  onInsert?: (event: OrdersRealtimeEvent) => void;
+  onRefresh?: (event: OrdersRealtimeEvent) => void;
+  onFallbackStart?: (reason: string) => void;
+  onFallbackStop?: () => void;
 };
 
 export function useOrdersRealtime(options: Options) {
@@ -18,11 +24,18 @@ export function useOrdersRealtime(options: Options) {
     source,
     showNewOrderToast = false,
     newOrderToastTitle = "New order received.",
+    autoRefresh = true,
+    refreshOnFallback = true,
+    onInsert,
+    onRefresh,
+    onFallbackStart,
+    onFallbackStop,
   } = options;
   const router = useRouter();
   const { toast } = useToast();
   const refreshTimeoutRef = useRef<number | null>(null);
   const fallbackToastShownRef = useRef(false);
+  const fallbackActiveRef = useRef(false);
 
   const queueRefresh = useEffectEvent(() => {
     if (refreshTimeoutRef.current !== null) {
@@ -35,34 +48,56 @@ export function useOrdersRealtime(options: Options) {
     }, REFRESH_DEBOUNCE_MS);
   });
 
-  const handleInsert = useEffectEvent(() => {
+  const handleRefresh = useEffectEvent((event: OrdersRealtimeEvent) => {
+    onRefresh?.(event);
+
+    if (autoRefresh || (refreshOnFallback && fallbackActiveRef.current)) {
+      queueRefresh();
+    }
+  });
+
+  const handleInsert = useEffectEvent((event: OrdersRealtimeEvent) => {
+    onInsert?.(event);
+
     if (showNewOrderToast) {
       toast({ title: newOrderToastTitle });
     }
-    queueRefresh();
+
+    if (autoRefresh) {
+      queueRefresh();
+    }
   });
 
-  const handleFallbackStart = useEffectEvent(() => {
+  const handleFallbackStart = useEffectEvent((reason: string) => {
+    fallbackActiveRef.current = true;
+
     if (!fallbackToastShownRef.current) {
       fallbackToastShownRef.current = true;
       toast({ title: "Live order updates disconnected. Using background refresh." });
     }
 
-    queueRefresh();
+    onFallbackStart?.(reason);
+
+    if (refreshOnFallback) {
+      queueRefresh();
+    }
   });
 
   const handleFallbackStop = useEffectEvent(() => {
+    fallbackActiveRef.current = false;
+
     if (fallbackToastShownRef.current) {
       toast({ title: "Live order updates reconnected." });
     }
 
     fallbackToastShownRef.current = false;
+    onFallbackStop?.();
   });
 
   useEffect(() => {
     const unsubscribe = subscribeToOrdersRealtime({
       source,
-      onRefresh: queueRefresh,
+      onRefresh: handleRefresh,
       onInsert: handleInsert,
       onFallbackStart: handleFallbackStart,
       onFallbackStop: handleFallbackStop,
@@ -74,6 +109,7 @@ export function useOrdersRealtime(options: Options) {
         refreshTimeoutRef.current = null;
       }
 
+      fallbackActiveRef.current = false;
       unsubscribe();
     };
   }, [source]);

@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChevronDown, Clock3, MapPin, MoreHorizontal, Store } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { OrderItemsList } from "@/components/admin/order-items-list";
 import { StatusPill } from "@/components/admin/status-pill";
 import { useOrdersRealtime } from "@/components/admin/use-orders-realtime";
@@ -13,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  fetchAdminOrderById,
   formatDeliveryMethod,
   formatOrderReference,
   getPrimaryOrderAction,
@@ -20,8 +20,12 @@ import {
   patchOrderStatus,
   reverifyOrderPayment,
 } from "@/lib/orders";
+import type { OrdersRealtimeEvent } from "@/lib/orders-realtime";
 import { cn } from "@/lib/utils";
 import type { Order } from "@/lib/types/domain";
+
+const RECENT_ORDER_LIMIT = 6;
+const RECONCILE_DEBOUNCE_MS = 150;
 
 function formatPaymentStatus(value: string | null): string {
   if (!value) {
@@ -41,14 +45,79 @@ type Props = {
 };
 
 export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
-  const router = useRouter();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
+  const [recentOrders, setRecentOrders] = useState<Order[]>(() => orders.slice(0, RECENT_ORDER_LIMIT));
+  const reconcileTimeoutsRef = useRef<Map<string, number>>(new Map());
 
-  useOrdersRealtime({ source: "DashboardRecentOrders" });
+  useEffect(() => {
+    setRecentOrders(orders.slice(0, RECENT_ORDER_LIMIT));
+  }, [orders]);
 
-  const recentOrders = orders.slice(0, 6);
+  const upsertRecentOrder = useEffectEvent((order: Order) => {
+    setRecentOrders((current) =>
+      [order, ...current.filter((candidate) => candidate.id !== order.id)]
+        .sort((left, right) => right.created_at.localeCompare(left.created_at))
+        .slice(0, RECENT_ORDER_LIMIT),
+    );
+  });
+
+  const removeRecentOrder = useEffectEvent((orderId: string) => {
+    setRecentOrders((current) => current.filter((order) => order.id !== orderId));
+    setExpandedId((current) => (current === orderId ? null : current));
+  });
+
+  const reconcileOrder = useEffectEvent(async (orderId: string) => {
+    const order = await fetchAdminOrderById(orderId);
+
+    if (!order) {
+      removeRecentOrder(orderId);
+      return;
+    }
+
+    upsertRecentOrder(order);
+  });
+
+  const scheduleReconcile = useEffectEvent((event: OrdersRealtimeEvent) => {
+    if (event.type === "DELETE" && event.orderId) {
+      removeRecentOrder(event.orderId);
+      return;
+    }
+
+    if (!event.orderId) {
+      return;
+    }
+
+    if (reconcileTimeoutsRef.current.has(event.orderId)) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      reconcileTimeoutsRef.current.delete(event.orderId!);
+      void reconcileOrder(event.orderId!);
+    }, RECONCILE_DEBOUNCE_MS);
+
+    reconcileTimeoutsRef.current.set(event.orderId, timeoutId);
+  });
+
+  useEffect(() => {
+    return () => {
+      for (const timeoutId of reconcileTimeoutsRef.current.values()) {
+        window.clearTimeout(timeoutId);
+      }
+
+      reconcileTimeoutsRef.current.clear();
+    };
+  }, []);
+
+  useOrdersRealtime({
+    source: "DashboardRecentOrders",
+    autoRefresh: false,
+    refreshOnFallback: true,
+    onInsert: scheduleReconcile,
+    onRefresh: scheduleReconcile,
+  });
 
   const handleAction = async (order: Order) => {
     const action = getPrimaryOrderAction(order);
@@ -66,7 +135,7 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
         await patchOrderStatus(order, action.nextStatus);
       }
 
-      router.refresh();
+      await reconcileOrder(order.id);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to update order");
     } finally {

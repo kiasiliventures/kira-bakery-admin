@@ -1,6 +1,6 @@
 "use client";
 
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
@@ -8,11 +8,17 @@ const ORDERS_REALTIME_CHANNEL_NAME = "admin-orders-realtime-v1";
 const FALLBACK_POLL_INTERVAL_MS = 10_000;
 const SUBSCRIPTION_TIMEOUT_MS = 5_000;
 
+export type OrdersRealtimeEvent = {
+  type: "INSERT" | "UPDATE" | "DELETE";
+  table: "orders" | "order_items";
+  orderId: string | null;
+};
+
 type OrdersRealtimeConsumer = {
   id: string;
   source: string;
-  onRefresh: () => void;
-  onInsert: () => void;
+  onRefresh: (event: OrdersRealtimeEvent) => void;
+  onInsert: (event: OrdersRealtimeEvent) => void;
   onFallbackStart: (reason: string) => void;
   onFallbackStop: () => void;
 };
@@ -106,49 +112,49 @@ class OrdersRealtimeManager {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "orders" },
-        () => {
+        (payload) => {
           this.log("orders_realtime_event", { event: "orders_insert" });
-          this.notifyInsert();
+          this.notifyInsert(this.toRealtimeEvent("orders", "INSERT", payload));
         },
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "orders" },
-        () => {
+        (payload) => {
           this.log("orders_realtime_event", { event: "orders_update" });
-          this.notifyRefresh();
+          this.notifyRefresh(this.toRealtimeEvent("orders", "UPDATE", payload));
         },
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "orders" },
-        () => {
+        (payload) => {
           this.log("orders_realtime_event", { event: "orders_delete" });
-          this.notifyRefresh();
+          this.notifyRefresh(this.toRealtimeEvent("orders", "DELETE", payload));
         },
       )
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "order_items" },
-        () => {
+        (payload) => {
           this.log("orders_realtime_event", { event: "order_items_insert" });
-          this.notifyRefresh();
+          this.notifyRefresh(this.toRealtimeEvent("order_items", "INSERT", payload));
         },
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "order_items" },
-        () => {
+        (payload) => {
           this.log("orders_realtime_event", { event: "order_items_update" });
-          this.notifyRefresh();
+          this.notifyRefresh(this.toRealtimeEvent("order_items", "UPDATE", payload));
         },
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "order_items" },
-        () => {
+        (payload) => {
           this.log("orders_realtime_event", { event: "order_items_delete" });
-          this.notifyRefresh();
+          this.notifyRefresh(this.toRealtimeEvent("order_items", "DELETE", payload));
         },
       )
       .subscribe((status, error) => {
@@ -216,7 +222,11 @@ class OrdersRealtimeManager {
     this.log("orders_realtime_fallback_start", { reason });
     this.notifyFallbackStart(reason);
     this.pollingIntervalId = window.setInterval(() => {
-      this.notifyRefresh();
+      this.notifyRefresh({
+        type: "UPDATE",
+        table: "orders",
+        orderId: null,
+      });
     }, FALLBACK_POLL_INTERVAL_MS);
   }
 
@@ -247,15 +257,15 @@ class OrdersRealtimeManager {
     void this.supabase.removeChannel(channel);
   }
 
-  private notifyRefresh() {
+  private notifyRefresh(event: OrdersRealtimeEvent) {
     for (const consumer of this.consumers.values()) {
-      consumer.onRefresh();
+      consumer.onRefresh(event);
     }
   }
 
-  private notifyInsert() {
+  private notifyInsert(event: OrdersRealtimeEvent) {
     for (const consumer of this.consumers.values()) {
-      consumer.onInsert();
+      consumer.onInsert(event);
     }
   }
 
@@ -269,6 +279,45 @@ class OrdersRealtimeManager {
     for (const consumer of this.consumers.values()) {
       consumer.onFallbackStop();
     }
+  }
+
+  private toRealtimeEvent(
+    table: OrdersRealtimeEvent["table"],
+    type: OrdersRealtimeEvent["type"],
+    payload: RealtimePostgresChangesPayload<Record<string, unknown>>,
+  ): OrdersRealtimeEvent {
+    return {
+      table,
+      type,
+      orderId: this.extractOrderId(table, type, payload),
+    };
+  }
+
+  private extractOrderId(
+    table: OrdersRealtimeEvent["table"],
+    type: OrdersRealtimeEvent["type"],
+    payload: RealtimePostgresChangesPayload<Record<string, unknown>>,
+  ): string | null {
+    const nextRow = this.asRecord(payload.new);
+    const previousRow = this.asRecord(payload.old);
+
+    if (table === "orders") {
+      return this.readString(type === "DELETE" ? previousRow.id : nextRow.id);
+    }
+
+    return this.readString(type === "DELETE" ? previousRow.order_id : nextRow.order_id);
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    if (value && typeof value === "object") {
+      return value as Record<string, unknown>;
+    }
+
+    return {};
+  }
+
+  private readString(value: unknown): string | null {
+    return typeof value === "string" && value.length > 0 ? value : null;
   }
 
   private log(message: string, meta: Record<string, unknown> = {}) {

@@ -97,6 +97,28 @@ export function getOrderItemPricing(item: OrderItem): {
   };
 }
 
+export async function fetchAdminOrderById(orderId: string): Promise<Order | null> {
+  const response = await fetch(`/api/admin/orders/${orderId}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { ok?: boolean; data?: { order?: Order | null }; error?: { message?: string } }
+    | null;
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.error?.message ?? "Failed to fetch order");
+  }
+
+  return payload.data?.order ?? null;
+}
+
 export async function patchOrderStatus(
   order: Pick<Order, "id" | "updated_at">,
   nextStatus: Order["status"],
