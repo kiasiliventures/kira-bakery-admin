@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRole, type RequestIdentity } from "@/lib/auth/authorize";
 import type { AllowedRole } from "@/lib/auth/roles";
 import { mapUnknownError, jsonError } from "@/lib/http/responses";
-import { getRequestIp } from "@/lib/http/route-helpers";
+import { assertSameOriginMutation, getRequestIp } from "@/lib/http/route-helpers";
 import { logger } from "@/lib/logger";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
 
@@ -25,6 +25,7 @@ export function withAdminRoute<TParams extends Record<string, string> = Record<s
   ): Promise<NextResponse> => {
     try {
       const params = await routeContext.params;
+      assertSameOriginMutation(request);
       const identity = await requireRole(config.allowedRoles);
       const ip = getRequestIp(request);
       const rateLimit = config.rateLimit ?? { limit: 60, windowMs: 60_000 };
