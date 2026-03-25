@@ -14,20 +14,14 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["business", "productivity", "food"],
     icons: [
       {
-        src: "/icons/kira_bakery_icon.svg",
+        src: "/icons/logo-square-192.png",
         sizes: "192x192",
-        type: "image/svg+xml",
+        type: "image/png",
       },
       {
-        src: "/icons/kira_bakery_icon.svg",
+        src: "/icons/logo-square-512.png",
         sizes: "512x512",
-        type: "image/svg+xml",
-      },
-      {
-        src: "/icons/kira_bakery_icon.svg",
-        sizes: "512x512",
-        type: "image/svg+xml",
-        purpose: "maskable",
+        type: "image/png",
       },
     ],
     shortcuts: [

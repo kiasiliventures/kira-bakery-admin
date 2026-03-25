@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { ChevronDown, LayoutDashboard, Package, ClipboardList, Boxes, BadgeDollarSign } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -24,10 +25,25 @@ export function TopNav({ user }: Props) {
   return (
     <header className="fixed inset-x-0 top-0 z-40 h-16 bg-kira-red text-white">
       <div className="mx-auto flex h-full w-full max-w-[1320px] items-center justify-between px-4 md:px-6">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4 md:gap-6">
           <Link href="/" className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/20 text-sm font-semibold">KB</span>
-            <span className="text-base font-semibold">Kira Bakery Admin</span>
+            <Image
+              src="/icons/logo-square.png"
+              alt="Kira Bakery Admin"
+              width={173}
+              height={192}
+              className="h-10 w-auto md:hidden"
+              priority
+            />
+            <Image
+              src="/icons/logo-rectangle.png"
+              alt="Kira Bakery Admin"
+              width={500}
+              height={232}
+              className="hidden h-10 w-auto md:block"
+              priority
+            />
+            <span className="sr-only">Kira Bakery Admin</span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
             {links.map(({ href, label, icon: Icon }) => (

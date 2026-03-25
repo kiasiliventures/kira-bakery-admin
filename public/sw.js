@@ -1,9 +1,14 @@
-const CACHE_NAME = "kira-admin-v1";
+const CACHE_NAME = "kira-admin-v2";
 const OFFLINE_URL = "/offline";
 const APP_ASSETS = [
   OFFLINE_URL,
   "/manifest.webmanifest",
-  "/icons/kira_bakery_icon.svg",
+  "/favicon.ico",
+  "/icons/logo-square-180.png",
+  "/icons/logo-square.png",
+  "/icons/logo-square-192.png",
+  "/icons/logo-square-512.png",
+  "/icons/logo-rectangle.png",
 ];
 
 self.addEventListener("install", (event) => {

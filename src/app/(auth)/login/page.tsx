@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/admin/login-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +17,15 @@ export default async function LoginPage() {
   return (
     <div className="mx-auto mt-14 max-w-md">
       <Card>
-        <CardHeader>
+        <CardHeader className="space-y-4">
+          <Image
+            src="/icons/logo-rectangle.png"
+            alt="Kira Bakery Admin"
+            width={500}
+            height={232}
+            className="h-16 w-auto"
+            priority
+          />
           <CardTitle>KiRA Bakery Admin Login</CardTitle>
         </CardHeader>
         <CardContent>
