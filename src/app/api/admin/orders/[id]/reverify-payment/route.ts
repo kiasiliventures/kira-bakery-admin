@@ -3,33 +3,11 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { logger } from "@/lib/logger";
-import { syncOrderPaymentViaStorefront } from "@/lib/payments/storefront";
+import {
+  getOrderPaymentRecord,
+  reverifyPesapalOrderPayment,
+} from "@/lib/payments/reverify";
 import { orderPaymentReverifySchema } from "@/lib/schemas/admin";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-
-type OrderPaymentRow = {
-  id: string;
-  status: string;
-  payment_status: string | null;
-  payment_provider: string | null;
-  payment_reference: string | null;
-  order_tracking_id: string | null;
-  paid_at: string | null;
-  inventory_deducted_at: string | null;
-  updated_at: string;
-};
-
-const orderSelection = [
-  "id",
-  "status",
-  "payment_status",
-  "payment_provider",
-  "payment_reference",
-  "order_tracking_id",
-  "paid_at",
-  "inventory_deducted_at",
-  "updated_at",
-].join(",");
 
 export const POST = withAdminRoute<{ id: string }>(
   {
@@ -39,23 +17,13 @@ export const POST = withAdminRoute<{ id: string }>(
   },
   async (request, { params }) => {
     const input = await parseJsonBody(request, orderPaymentReverifySchema);
-    const supabaseAdmin = createSupabaseAdminClient();
-
-    const { data: existing, error: existingError } = await supabaseAdmin
-      .from("orders")
-      .select(orderSelection)
-      .eq("id", params.id)
-      .maybeSingle();
-
-    if (existingError) {
-      throw new Error(`Order payment lookup failed: ${existingError.message}`);
-    }
+    const existing = await getOrderPaymentRecord(params.id);
 
     if (!existing) {
       throw notFound("Order not found");
     }
 
-    const order = existing as unknown as OrderPaymentRow;
+    const order = existing;
 
     if (order.updated_at !== input.updatedAt) {
       throw conflict("Order was modified concurrently");
@@ -73,74 +41,38 @@ export const POST = withAdminRoute<{ id: string }>(
       paymentStatus: order.payment_status,
     });
 
-    const storefrontOrder = await syncOrderPaymentViaStorefront(order.id);
+    const result = await reverifyPesapalOrderPayment(order);
+    const updatedOrder = result.order;
+    const wasUpdated = result.updated;
 
-    const { data: updated, error: updatedError } = await supabaseAdmin
-      .from("orders")
-      .select(orderSelection)
-      .eq("id", params.id)
-      .maybeSingle();
-
-    if (updatedError) {
-      throw new Error(`Order payment refresh lookup failed: ${updatedError.message}`);
-    }
-
-    if (!updated) {
-      throw notFound("Order not found");
-    }
-
-    const updatedOrder = updated as unknown as OrderPaymentRow;
-    const wasUpdated =
-      updatedOrder.updated_at !== order.updated_at
-      || updatedOrder.payment_status !== order.payment_status
-      || updatedOrder.payment_reference !== order.payment_reference
-      || updatedOrder.paid_at !== order.paid_at
-      || updatedOrder.inventory_deducted_at !== order.inventory_deducted_at;
-
-    if (!wasUpdated && storefrontOrder.paymentStatus === "pending") {
+    if (!wasUpdated && result.paymentStatus === "pending") {
       logger.info("admin_order_payment_reverify_pending", {
         orderId: order.id,
         trackingId: order.order_tracking_id,
-        providerStatus: storefrontOrder.providerStatus,
+        providerStatus: result.providerStatus,
       });
 
       return jsonOk({
         order: updatedOrder,
-        providerStatus: storefrontOrder.providerStatus,
-        paymentStatus: storefrontOrder.paymentStatus,
+        providerStatus: result.providerStatus,
+        paymentStatus: result.paymentStatus,
         updated: false,
       });
     }
 
-    const { data: latest, error: latestError } = await supabaseAdmin
-      .from("orders")
-      .select(orderSelection)
-      .eq("id", params.id)
-      .maybeSingle();
-
-    if (latestError) {
-      throw new Error(`Order payment lookup failed: ${latestError.message}`);
-    }
-
-    if (!latest) {
-      throw notFound("Order not found");
-    }
-
-    const latestOrder = latest as unknown as OrderPaymentRow;
-
     logger.info("admin_order_payment_reverify_success", {
       orderId: params.id,
       trackingId: order.order_tracking_id,
-      paymentStatus: latestOrder.payment_status,
-      providerStatus: storefrontOrder.providerStatus,
-      inventoryDeductedAt: latestOrder.inventory_deducted_at,
+      paymentStatus: updatedOrder.payment_status,
+      providerStatus: result.providerStatus,
+      inventoryDeductedAt: updatedOrder.inventory_deducted_at,
       updated: wasUpdated,
     });
 
     return jsonOk({
-      order: latestOrder,
-      providerStatus: storefrontOrder.providerStatus,
-      paymentStatus: storefrontOrder.paymentStatus,
+      order: updatedOrder,
+      providerStatus: result.providerStatus,
+      paymentStatus: result.paymentStatus,
       updated: wasUpdated,
     });
   },
