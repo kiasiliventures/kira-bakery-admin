@@ -441,8 +441,9 @@ export async function createCakeCustomRequest(input: {
   phone: string;
   email?: string;
   notes?: string;
-  sourceNote?: string;
-  requestPayload: Record<string, unknown>;
+  eventDate: string;
+  messageOnCake?: string;
+  price: CakePriceDto;
 }) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -452,8 +453,40 @@ export async function createCakeCustomRequest(input: {
       phone: input.phone,
       email: input.email || null,
       notes: input.notes || null,
-      source_note: input.sourceNote || null,
-      request_payload: input.requestPayload,
+      source_note: "admin_public_cake_builder",
+      request_payload: {
+        eventDate: input.eventDate,
+        messageOnCake: input.messageOnCake || "",
+        priceId: input.price.id,
+        priceUgx: input.price.priceUgx,
+        weightKg: input.price.weightKg,
+        flavour: {
+          id: input.price.flavourId,
+          code: input.price.flavourCode,
+          name: input.price.flavourName,
+        },
+        shape: {
+          id: input.price.shapeId,
+          code: input.price.shapeCode,
+          name: input.price.shapeName,
+        },
+        size: {
+          id: input.price.sizeId,
+          code: input.price.sizeCode,
+          name: input.price.sizeName,
+        },
+        tierOption: {
+          id: input.price.tierOptionId,
+          code: input.price.tierOptionCode,
+          name: input.price.tierOptionName,
+          tierCount: input.price.tierCount,
+        },
+        topping: {
+          id: input.price.toppingId,
+          code: input.price.toppingCode,
+          name: input.price.toppingName,
+        },
+      },
       status: "pending",
     })
     .select("id,status,created_at")

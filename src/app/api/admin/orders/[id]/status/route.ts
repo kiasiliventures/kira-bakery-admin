@@ -1,3 +1,4 @@
+import { writeAdminAuditLog } from "@/lib/audit/admin-audit";
 import { badRequest, conflict, notFound } from "@/lib/http/errors";
 import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
@@ -45,24 +46,60 @@ export const PATCH = withAdminRoute<{ id: string }>(
     actionName: "patch_order_status",
     rateLimit: { limit: 80, windowMs: 60_000 },
   },
-  async (request, { params }) => {
+  async (request, { identity, ip, params }) => {
     const input = await parseJsonBody(request, orderStatusPatchSchema);
     const supabase = await createSupabaseServerClient();
 
-    const { data, error } = await supabase.rpc("admin_transition_order_status", {
-      p_order_id: params.id,
-      p_next_status: input.orderStatus,
-      p_expected_updated_at: input.updatedAt,
-    });
+    try {
+      const { data, error } = await supabase.rpc("admin_transition_order_status", {
+        p_order_id: params.id,
+        p_next_status: input.orderStatus,
+        p_expected_updated_at: input.updatedAt,
+      });
 
-    if (error) {
-      throw mapTransitionError(error.message);
+      if (error) {
+        throw mapTransitionError(error.message);
+      }
+
+      if (!data) {
+        throw notFound("Order not found");
+      }
+
+      await writeAdminAuditLog({
+        actorUserId: identity.user.id,
+        actorRole: identity.profile.role,
+        requestIp: ip,
+        action: "order_status_transition",
+        entityType: "order",
+        entityId: params.id,
+        outcome: "succeeded",
+        details: {
+          requestedStatus: input.orderStatus,
+          expectedUpdatedAt: input.updatedAt,
+          resultingStatus: (data as { status?: string | null }).status ?? null,
+        },
+      });
+
+      return jsonOk({ order: data });
+    } catch (error) {
+      const mapped = error instanceof Error ? error : new Error("unknown_error");
+
+      await writeAdminAuditLog({
+        actorUserId: identity.user.id,
+        actorRole: identity.profile.role,
+        requestIp: ip,
+        action: "order_status_transition",
+        entityType: "order",
+        entityId: params.id,
+        outcome: "failed",
+        details: {
+          requestedStatus: input.orderStatus,
+          expectedUpdatedAt: input.updatedAt,
+          error: mapped.message,
+        },
+      });
+
+      throw error;
     }
-
-    if (!data) {
-      throw notFound("Order not found");
-    }
-
-    return jsonOk({ order: data });
   },
 );

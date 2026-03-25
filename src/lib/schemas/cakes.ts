@@ -55,9 +55,15 @@ export const cakeCustomRequestCreateSchema = z.object({
   customerName: z.string().trim().min(2).max(120),
   phone: z.string().trim().min(7).max(40),
   email: z.string().trim().email().max(200).optional().or(z.literal("")),
+  eventDate: z.string().trim().min(1).max(80),
+  messageOnCake: z.string().trim().max(120).optional().or(z.literal("")),
   notes: z.string().trim().max(1000).optional().or(z.literal("")),
-  sourceNote: z.string().trim().max(500).optional().or(z.literal("")),
-  requestPayload: z.record(z.string(), z.unknown()),
+  priceId: uuidSchema,
+  flavourId: uuidSchema,
+  shapeId: uuidSchema,
+  sizeId: uuidSchema,
+  tierOptionId: uuidSchema,
+  toppingId: uuidSchema,
 });
 
 export type CakeOptionCreateInput = z.infer<typeof cakeOptionCreateSchema>;

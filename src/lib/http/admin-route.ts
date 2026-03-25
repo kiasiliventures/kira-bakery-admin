@@ -9,6 +9,7 @@ import { enforceRateLimit } from "@/lib/security/rate-limit";
 type HandlerContext<TParams extends Record<string, string> = Record<string, string>> = {
   identity: RequestIdentity;
   params: TParams;
+  ip: string;
 };
 
 export function withAdminRoute<TParams extends Record<string, string> = Record<string, string>>(
@@ -42,7 +43,7 @@ export function withAdminRoute<TParams extends Record<string, string> = Record<s
         ip,
       });
 
-      return await handler(request, { identity, params });
+      return await handler(request, { identity, params, ip });
     } catch (error) {
       const mapped = mapUnknownError(error, config.actionName);
       return jsonError(mapped);

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OrderItemsList } from "@/components/admin/order-items-list";
 import { StatusPill } from "@/components/admin/status-pill";
 import { useOrdersRealtime } from "@/components/admin/use-orders-realtime";
 import { Button } from "@/components/ui/button";
 import {
+  fetchAdminOrderById,
   formatDeliveryMethod,
   formatOrderReference,
   getPrimaryOrderAction,
@@ -14,7 +15,10 @@ import {
   patchOrderStatus,
   reverifyOrderPayment,
 } from "@/lib/orders";
+import type { OrdersRealtimeEvent } from "@/lib/orders-realtime";
 import type { Order } from "@/lib/types/domain";
+
+const RECONCILE_DEBOUNCE_MS = 150;
 
 function formatPaymentStatus(value: string | null): string {
   if (!value) {
@@ -35,10 +39,78 @@ type Props = {
 
 export function OrderStatusManager({ orders, canUpdateStatus }: Props) {
   const router = useRouter();
+  const [localOrders, setLocalOrders] = useState<Order[]>(orders);
   const [status, setStatus] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const reconcileTimeoutsRef = useRef<Map<string, number>>(new Map());
 
-  useOrdersRealtime({ source: "OrderStatusManager", showNewOrderToast: true });
+  useEffect(() => {
+    setLocalOrders(orders);
+  }, [orders]);
+
+  const upsertOrder = (order: Order) => {
+    setLocalOrders((current) =>
+      [order, ...current.filter((candidate) => candidate.id !== order.id)]
+        .sort((left, right) => right.created_at.localeCompare(left.created_at)),
+    );
+  };
+
+  const removeOrder = (orderId: string) => {
+    setLocalOrders((current) => current.filter((order) => order.id !== orderId));
+  };
+
+  const reconcileOrder = async (orderId: string) => {
+    const order = await fetchAdminOrderById(orderId);
+
+    if (!order) {
+      removeOrder(orderId);
+      return;
+    }
+
+    upsertOrder(order);
+  };
+
+  const scheduleReconcile = (event: OrdersRealtimeEvent) => {
+    if (event.type === "DELETE" && event.orderId) {
+      removeOrder(event.orderId);
+      return;
+    }
+
+    if (!event.orderId) {
+      router.refresh();
+      return;
+    }
+
+    if (reconcileTimeoutsRef.current.has(event.orderId)) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      reconcileTimeoutsRef.current.delete(event.orderId!);
+      void reconcileOrder(event.orderId!);
+    }, RECONCILE_DEBOUNCE_MS);
+
+    reconcileTimeoutsRef.current.set(event.orderId, timeoutId);
+  };
+
+  useEffect(() => {
+    return () => {
+      for (const timeoutId of reconcileTimeoutsRef.current.values()) {
+        window.clearTimeout(timeoutId);
+      }
+
+      reconcileTimeoutsRef.current.clear();
+    };
+  }, []);
+
+  useOrdersRealtime({
+    source: "OrderStatusManager",
+    showNewOrderToast: true,
+    autoRefresh: false,
+    refreshOnFallback: true,
+    onInsert: scheduleReconcile,
+    onRefresh: scheduleReconcile,
+  });
 
   const handleAction = async (order: Order) => {
     const action = getPrimaryOrderAction(order);
@@ -56,7 +128,7 @@ export function OrderStatusManager({ orders, canUpdateStatus }: Props) {
         await patchOrderStatus(order, action.nextStatus);
       }
 
-      router.refresh();
+      await reconcileOrder(order.id);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to update order status");
     } finally {
@@ -64,13 +136,13 @@ export function OrderStatusManager({ orders, canUpdateStatus }: Props) {
     }
   };
 
-  if (orders.length === 0) {
+  if (localOrders.length === 0) {
     return <p className="text-sm text-slate-500">No orders found in the database.</p>;
   }
 
   return (
     <div className="space-y-4">
-      {orders.map((order) => {
+      {localOrders.map((order) => {
         const action = getPrimaryOrderAction(order);
         const actionDisabled = !canUpdateStatus || !action || (action.type === "reverify" && action.disabled);
 

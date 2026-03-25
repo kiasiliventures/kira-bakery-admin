@@ -1,3 +1,4 @@
+import { writeAdminAuditLog } from "@/lib/audit/admin-audit";
 import { badRequest, conflict, notFound } from "@/lib/http/errors";
 import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
@@ -15,7 +16,7 @@ export const POST = withAdminRoute<{ id: string }>(
     actionName: "reverify_order_payment",
     rateLimit: { limit: 60, windowMs: 60_000 },
   },
-  async (request, { params }) => {
+  async (request, { identity, ip, params }) => {
     const input = await parseJsonBody(request, orderPaymentReverifySchema);
     const existing = await getOrderPaymentRecord(params.id);
 
@@ -41,39 +42,94 @@ export const POST = withAdminRoute<{ id: string }>(
       paymentStatus: order.payment_status,
     });
 
-    const result = await reverifyPesapalOrderPayment(order);
+    try {
+      const result = await reverifyPesapalOrderPayment(order);
     const updatedOrder = result.order;
     const wasUpdated = result.updated;
 
-    if (!wasUpdated && result.paymentStatus === "pending") {
-      logger.info("admin_order_payment_reverify_pending", {
-        orderId: order.id,
+      if (!wasUpdated && result.paymentStatus === "pending") {
+        logger.info("admin_order_payment_reverify_pending", {
+          orderId: order.id,
+          trackingId: order.order_tracking_id,
+          providerStatus: result.providerStatus,
+        });
+
+        await writeAdminAuditLog({
+          actorUserId: identity.user.id,
+          actorRole: identity.profile.role,
+          requestIp: ip,
+          action: "order_payment_reverify",
+          entityType: "order",
+          entityId: params.id,
+          outcome: "pending",
+          details: {
+            trackingId: order.order_tracking_id,
+            providerStatus: result.providerStatus,
+            paymentStatus: result.paymentStatus,
+            updated: false,
+          },
+        });
+
+        return jsonOk({
+          order: updatedOrder,
+          providerStatus: result.providerStatus,
+          paymentStatus: result.paymentStatus,
+          updated: false,
+        });
+      }
+
+      logger.info("admin_order_payment_reverify_success", {
+        orderId: params.id,
         trackingId: order.order_tracking_id,
+        paymentStatus: updatedOrder.payment_status,
         providerStatus: result.providerStatus,
+        inventoryDeductedAt: updatedOrder.inventory_deducted_at,
+        updated: wasUpdated,
+      });
+
+      await writeAdminAuditLog({
+        actorUserId: identity.user.id,
+        actorRole: identity.profile.role,
+        requestIp: ip,
+        action: "order_payment_reverify",
+        entityType: "order",
+        entityId: params.id,
+        outcome: wasUpdated ? "succeeded" : "noop",
+        details: {
+          trackingId: order.order_tracking_id,
+          providerStatus: result.providerStatus,
+          paymentStatus: result.paymentStatus,
+          updated: wasUpdated,
+          inventoryDeductedAt: updatedOrder.inventory_deducted_at,
+        },
       });
 
       return jsonOk({
         order: updatedOrder,
         providerStatus: result.providerStatus,
         paymentStatus: result.paymentStatus,
-        updated: false,
+        updated: wasUpdated,
       });
+    } catch (error) {
+      const mapped = error instanceof Error ? error : new Error("unknown_error");
+
+      await writeAdminAuditLog({
+        actorUserId: identity.user.id,
+        actorRole: identity.profile.role,
+        requestIp: ip,
+        action: "order_payment_reverify",
+        entityType: "order",
+        entityId: params.id,
+        outcome: "failed",
+        details: {
+          trackingId: order.order_tracking_id,
+          currentPaymentStatus: order.payment_status,
+          expectedUpdatedAt: input.updatedAt,
+          error: mapped.message,
+        },
+      });
+
+      throw error;
     }
-
-    logger.info("admin_order_payment_reverify_success", {
-      orderId: params.id,
-      trackingId: order.order_tracking_id,
-      paymentStatus: updatedOrder.payment_status,
-      providerStatus: result.providerStatus,
-      inventoryDeductedAt: updatedOrder.inventory_deducted_at,
-      updated: wasUpdated,
-    });
-
-    return jsonOk({
-      order: updatedOrder,
-      providerStatus: result.providerStatus,
-      paymentStatus: result.paymentStatus,
-      updated: wasUpdated,
-    });
   },
 );

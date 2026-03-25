@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Clock3, MapPin, MoreHorizontal, Store } from "lucide-react";
 import { OrderItemsList } from "@/components/admin/order-items-list";
 import { StatusPill } from "@/components/admin/status-pill";
@@ -55,20 +55,20 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
     setRecentOrders(orders.slice(0, RECENT_ORDER_LIMIT));
   }, [orders]);
 
-  const upsertRecentOrder = useEffectEvent((order: Order) => {
+  const upsertRecentOrder = (order: Order) => {
     setRecentOrders((current) =>
       [order, ...current.filter((candidate) => candidate.id !== order.id)]
         .sort((left, right) => right.created_at.localeCompare(left.created_at))
         .slice(0, RECENT_ORDER_LIMIT),
     );
-  });
+  };
 
-  const removeRecentOrder = useEffectEvent((orderId: string) => {
+  const removeRecentOrder = (orderId: string) => {
     setRecentOrders((current) => current.filter((order) => order.id !== orderId));
     setExpandedId((current) => (current === orderId ? null : current));
-  });
+  };
 
-  const reconcileOrder = useEffectEvent(async (orderId: string) => {
+  const reconcileOrder = async (orderId: string) => {
     const order = await fetchAdminOrderById(orderId);
 
     if (!order) {
@@ -77,9 +77,9 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
     }
 
     upsertRecentOrder(order);
-  });
+  };
 
-  const scheduleReconcile = useEffectEvent((event: OrdersRealtimeEvent) => {
+  const scheduleReconcile = (event: OrdersRealtimeEvent) => {
     if (event.type === "DELETE" && event.orderId) {
       removeRecentOrder(event.orderId);
       return;
@@ -99,7 +99,7 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
     }, RECONCILE_DEBOUNCE_MS);
 
     reconcileTimeoutsRef.current.set(event.orderId, timeoutId);
-  });
+  };
 
   useEffect(() => {
     return () => {
