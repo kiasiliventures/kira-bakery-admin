@@ -1,13 +1,10 @@
 import "server-only";
 
 import { badRequest, conflict, notFound } from "@/lib/http/errors";
-import { logger } from "@/lib/logger";
-import {
-  getPesapalTransactionStatus,
-  normalizePesapalPaymentState,
-  type NormalizedPesapalPaymentState,
-} from "@/lib/payments/pesapal";
+import { requireEnv } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+
+export type NormalizedPaymentVerificationState = "paid" | "failed" | "cancelled" | "pending";
 
 export type OrderPaymentRecord = {
   id: string;
@@ -28,8 +25,29 @@ export type OrderPaymentRecord = {
 export type OrderPaymentReverifyResult = {
   order: OrderPaymentRecord;
   providerStatus: string | null;
-  paymentStatus: NormalizedPesapalPaymentState;
+  paymentStatus: NormalizedPaymentVerificationState;
   updated: boolean;
+};
+
+type PaymentAuthorityVerificationResult = {
+  ok: boolean;
+  orderId: string;
+  provider: string;
+  verificationState: NormalizedPaymentVerificationState;
+  providerStatus: string | null;
+  stickyPaid: boolean;
+  wasAlreadyPaid: boolean;
+  isNowPaid: boolean;
+  justBecamePaid: boolean;
+  amountExpected: number;
+  amountReceived: number | null;
+  currency: string;
+  providerTrackingId: string | null;
+  merchantReference: string;
+  paymentReference: string | null;
+  updated: boolean;
+  orderSnapshot: unknown;
+  message: string;
 };
 
 export const orderPaymentSelection = [
@@ -48,12 +66,7 @@ export const orderPaymentSelection = [
   "updated_at",
 ].join(",");
 
-function normalizeText(value: string | null | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
-}
-
-function normalizeStoredPaymentStatus(paymentStatus: string | null | undefined): NormalizedPesapalPaymentState {
+function normalizeStoredPaymentStatus(paymentStatus: string | null | undefined): NormalizedPaymentVerificationState {
   const normalized = paymentStatus?.trim().toLowerCase();
   if (!normalized || normalized === "unpaid") {
     return "pending";
@@ -74,66 +87,6 @@ function normalizeStoredPaymentStatus(paymentStatus: string | null | undefined):
   return "pending";
 }
 
-function resolveVerifiedPaymentStatus(
-  currentStatus: NormalizedPesapalPaymentState,
-  verifiedStatus: NormalizedPesapalPaymentState,
-): NormalizedPesapalPaymentState {
-  if (currentStatus === "paid" && verifiedStatus !== "paid") {
-    return currentStatus;
-  }
-
-  if (verifiedStatus === "paid") {
-    return "paid";
-  }
-
-  return verifiedStatus;
-}
-
-function resolveStoredOrderAmount(order: OrderPaymentRecord): number {
-  return Math.round(Number(order.total_ugx ?? order.total_price ?? 0));
-}
-
-function resolveAttemptCurrency(): string {
-  return "UGX";
-}
-
-async function upsertPaymentAttempt(input: {
-  orderId: string;
-  provider: string;
-  providerReference: string;
-  amount: number;
-  status: NormalizedPesapalPaymentState;
-  redirectUrl?: string | null;
-  rawProviderResponse?: unknown;
-  createdAt?: string;
-  verifiedAt?: string | null;
-}) {
-  const supabaseAdmin = createSupabaseAdminClient();
-  const { error } = await supabaseAdmin
-    .from("payment_attempts")
-    .upsert(
-      {
-        order_id: input.orderId,
-        provider: input.provider,
-        provider_reference: input.providerReference,
-        amount: input.amount,
-        currency: resolveAttemptCurrency(),
-        status: input.status,
-        redirect_url: input.redirectUrl ?? null,
-        raw_provider_response: input.rawProviderResponse ?? null,
-        created_at: input.createdAt,
-        verified_at: input.verifiedAt ?? null,
-      },
-      {
-        onConflict: "provider,provider_reference",
-      },
-    );
-
-  if (error) {
-    throw new Error(`Payment attempt upsert failed: ${error.message}`);
-  }
-}
-
 function hasPaymentFieldsChanged(previous: OrderPaymentRecord, next: OrderPaymentRecord): boolean {
   return (
     next.updated_at !== previous.updated_at
@@ -143,6 +96,88 @@ function hasPaymentFieldsChanged(previous: OrderPaymentRecord, next: OrderPaymen
     || next.paid_at !== previous.paid_at
     || next.inventory_deducted_at !== previous.inventory_deducted_at
   );
+}
+
+function getPaymentAuthorityBaseUrl(): string {
+  return requireEnv("PAYMENT_AUTHORITY_BASE_URL").replace(/\/+$/, "");
+}
+
+function getPaymentAuthorityToken(): string {
+  return requireEnv("INTERNAL_PAYMENT_AUTHORITY_TOKEN");
+}
+
+async function parseAuthorityResponse(response: Response): Promise<unknown> {
+  const text = await response.text();
+
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(`Unexpected payment authority response (${response.status}): ${text}`);
+  }
+}
+
+function isPaymentAuthorityVerificationResult(value: unknown): value is PaymentAuthorityVerificationResult {
+  return (
+    typeof value === "object"
+    && value !== null
+    && "ok" in value
+    && "verificationState" in value
+    && "message" in value
+  );
+}
+
+async function callPaymentAuthority(order: OrderPaymentRecord): Promise<PaymentAuthorityVerificationResult> {
+  if (!order.order_tracking_id) {
+    throw badRequest("Order does not have a payment tracking ID yet");
+  }
+
+  const url = `${getPaymentAuthorityBaseUrl()}/api/internal/payments/orders/${order.id}/verify`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getPaymentAuthorityToken()}`,
+    },
+    body: JSON.stringify({
+      source: "admin_reverify",
+    }),
+    cache: "no-store",
+  });
+  const payload = await parseAuthorityResponse(response);
+
+  if (!response.ok) {
+    const message =
+      isPaymentAuthorityVerificationResult(payload)
+        ? payload.message
+        : payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
+          ? payload.message
+          : `Payment authority request failed (${response.status}).`;
+
+    if (response.status === 400) {
+      throw badRequest(message);
+    }
+
+    if (response.status === 409) {
+      throw conflict(message);
+    }
+
+    throw new Error(message);
+  }
+
+  if (!isPaymentAuthorityVerificationResult(payload)) {
+    throw new Error("Payment authority returned an unexpected response.");
+  }
+
+  if (!payload.ok) {
+    throw conflict(payload.message);
+  }
+
+  return payload;
 }
 
 export async function getOrderPaymentRecord(orderId: string): Promise<OrderPaymentRecord | null> {
@@ -160,141 +195,20 @@ export async function getOrderPaymentRecord(orderId: string): Promise<OrderPayme
   return (data as OrderPaymentRecord | null) ?? null;
 }
 
-export async function reverifyPesapalOrderPayment(
+export async function reverifyOrderPayment(
   order: OrderPaymentRecord,
 ): Promise<OrderPaymentReverifyResult> {
-  const supabaseAdmin = createSupabaseAdminClient();
-  const orderTrackingId = normalizeText(order.order_tracking_id);
-
-  if (!orderTrackingId) {
-    throw badRequest("Order does not have a payment tracking ID yet");
-  }
-
-  const currentProvider = normalizeText(order.payment_provider);
-  if (currentProvider && currentProvider !== "pesapal") {
-    throw badRequest("Order is assigned to a different payment provider.");
-  }
-
-  const providerResponse = await getPesapalTransactionStatus(orderTrackingId);
-  const providerStatus = normalizeText(providerResponse.payment_status_description);
-  const verifiedPaymentStatus = normalizePesapalPaymentState(providerStatus);
-  const currentPaymentStatus = normalizeStoredPaymentStatus(order.payment_status);
-  const nextPaymentStatus = resolveVerifiedPaymentStatus(currentPaymentStatus, verifiedPaymentStatus);
-  const nextPaymentProvider = currentProvider ?? "pesapal";
-  const nextPaymentReference =
-    normalizeText(providerResponse.confirmation_code) ?? normalizeText(order.payment_reference);
-  const expectedAmount = resolveStoredOrderAmount(order);
-  const receivedAmount =
-    typeof providerResponse.amount === "number" && Number.isFinite(providerResponse.amount)
-      ? Math.round(providerResponse.amount)
-      : null;
-
-  if (verifiedPaymentStatus === "paid" && receivedAmount !== expectedAmount) {
-    logger.error("admin_order_payment_reverify_amount_mismatch", {
-      orderId: order.id,
-      trackingId: orderTrackingId,
-      expectedAmount,
-      receivedAmount,
-      providerStatus,
-    });
-
-    await upsertPaymentAttempt({
-      orderId: order.id,
-      provider: nextPaymentProvider,
-      providerReference: orderTrackingId,
-      amount: receivedAmount ?? expectedAmount,
-      status: currentPaymentStatus === "paid" ? currentPaymentStatus : "pending",
-      redirectUrl: order.payment_redirect_url,
-      rawProviderResponse: {
-        verificationRejected: "amount_mismatch",
-        expectedAmount,
-        receivedAmount,
-        providerStatus,
-        payload: providerResponse,
-      },
-      createdAt: order.created_at,
-      verifiedAt: order.paid_at,
-    });
-
-    throw conflict("Payment amount verification failed. Order held for review.");
-  }
-
-  const requiresPersistence =
-    nextPaymentProvider !== currentProvider
-    || nextPaymentReference !== normalizeText(order.payment_reference)
-    || nextPaymentStatus !== order.payment_status;
-
-  if (requiresPersistence) {
-    const updateValues: Record<string, string | null> = {
-      payment_provider: nextPaymentProvider,
-      payment_reference: nextPaymentReference,
-      payment_status: nextPaymentStatus,
-    };
-
-    if (nextPaymentStatus === "paid" && order.paid_at) {
-      updateValues.paid_at = order.paid_at;
-    }
-
-    const { data, error } = await supabaseAdmin
-      .from("orders")
-      .update(updateValues)
-      .eq("id", order.id)
-      .eq("updated_at", order.updated_at)
-      .select(orderPaymentSelection)
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(`Order payment update failed: ${error.message}`);
-    }
-
-    if (!data) {
-      throw conflict("Order was modified concurrently");
-    }
-
-    const updatedOrder = data as unknown as OrderPaymentRecord;
-
-    await upsertPaymentAttempt({
-      orderId: updatedOrder.id,
-      provider: nextPaymentProvider,
-      providerReference: orderTrackingId,
-      amount: receivedAmount ?? expectedAmount,
-      status: nextPaymentStatus,
-      redirectUrl: updatedOrder.payment_redirect_url,
-      rawProviderResponse: providerResponse,
-      createdAt: updatedOrder.created_at,
-      verifiedAt: updatedOrder.paid_at,
-    });
-
-    return {
-      order: updatedOrder,
-      providerStatus,
-      paymentStatus: nextPaymentStatus,
-      updated: hasPaymentFieldsChanged(order, updatedOrder),
-    };
-  }
-
+  const authorityResult = await callPaymentAuthority(order);
   const latestOrder = await getOrderPaymentRecord(order.id);
 
   if (!latestOrder) {
     throw notFound("Order not found");
   }
 
-  await upsertPaymentAttempt({
-    orderId: latestOrder.id,
-    provider: nextPaymentProvider,
-    providerReference: orderTrackingId,
-    amount: receivedAmount ?? expectedAmount,
-    status: nextPaymentStatus,
-    redirectUrl: latestOrder.payment_redirect_url,
-    rawProviderResponse: providerResponse,
-    createdAt: latestOrder.created_at,
-    verifiedAt: latestOrder.paid_at,
-  });
-
   return {
     order: latestOrder,
-    providerStatus,
-    paymentStatus: nextPaymentStatus,
+    providerStatus: authorityResult.providerStatus,
+    paymentStatus: normalizeStoredPaymentStatus(latestOrder.payment_status ?? authorityResult.verificationState),
     updated: hasPaymentFieldsChanged(order, latestOrder),
   };
 }

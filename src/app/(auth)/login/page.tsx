@@ -23,7 +23,7 @@ export default async function LoginPage() {
             alt="Kira Bakery Admin"
             width={500}
             height={232}
-            className="h-16 w-auto"
+            className="mx-auto h-16 w-auto"
             priority
           />
           <CardTitle>KiRA Bakery Admin Login</CardTitle>

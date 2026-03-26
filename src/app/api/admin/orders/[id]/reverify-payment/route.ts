@@ -6,7 +6,7 @@ import { parseJsonBody } from "@/lib/http/route-helpers";
 import { logger } from "@/lib/logger";
 import {
   getOrderPaymentRecord,
-  reverifyPesapalOrderPayment,
+  reverifyOrderPayment,
 } from "@/lib/payments/reverify";
 import { orderPaymentReverifySchema } from "@/lib/schemas/admin";
 
@@ -43,9 +43,9 @@ export const POST = withAdminRoute<{ id: string }>(
     });
 
     try {
-      const result = await reverifyPesapalOrderPayment(order);
-    const updatedOrder = result.order;
-    const wasUpdated = result.updated;
+      const result = await reverifyOrderPayment(order);
+      const updatedOrder = result.order;
+      const wasUpdated = result.updated;
 
       if (!wasUpdated && result.paymentStatus === "pending") {
         logger.info("admin_order_payment_reverify_pending", {
