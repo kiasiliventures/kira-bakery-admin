@@ -3,8 +3,18 @@ import { badRequest, conflict, notFound } from "@/lib/http/errors";
 import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
+import {
+  didTransitionToReady,
+  triggerStorefrontReadyNotification,
+} from "@/lib/storefront-ready-notifications";
 import { orderStatusPatchSchema } from "@/lib/schemas/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+type TransitionedOrder = {
+  id?: string | null;
+  status?: string | null;
+  updated_at?: string | null;
+};
 
 function mapTransitionError(message: string) {
   const normalized = message.toLowerCase();
@@ -80,7 +90,31 @@ export const PATCH = withAdminRoute<{ id: string }>(
         },
       });
 
-      return jsonOk({ order: data });
+      const transitionedOrder = data as TransitionedOrder;
+      const transitionedToReady = didTransitionToReady({
+        requestedStatus: input.orderStatus,
+        previousUpdatedAt: input.updatedAt,
+        resultingOrder: transitionedOrder,
+      });
+
+      const readyNotification =
+        transitionedToReady
+          && typeof transitionedOrder.id === "string"
+          && typeof transitionedOrder.updated_at === "string"
+          ? await triggerStorefrontReadyNotification({
+            id: transitionedOrder.id,
+            updatedAt: transitionedOrder.updated_at,
+          })
+          : {
+            attempted: false,
+            triggered: false,
+            request: null,
+          };
+
+      return jsonOk({
+        order: data,
+        readyNotification,
+      });
     } catch (error) {
       const mapped = error instanceof Error ? error : new Error("unknown_error");
 
