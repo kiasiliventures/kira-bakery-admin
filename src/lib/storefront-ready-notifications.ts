@@ -4,7 +4,7 @@ import { requireEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
 
 type ReadyNotificationOrder = {
-  id: string;
+  id?: string | null;
   status?: string | null;
   updated_at?: string | null;
 };
