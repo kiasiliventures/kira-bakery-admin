@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import { ServiceWorkerRegistration } from "@/components/pwa/service-worker-registration";
 
@@ -47,6 +48,7 @@ export default function RootLayout({
       <body className="antialiased">
         <ServiceWorkerRegistration />
         {children}
+        <SpeedInsights />
       </body>
     </html>
   );
