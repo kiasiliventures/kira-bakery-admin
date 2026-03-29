@@ -18,6 +18,10 @@ export type OrderPaymentRecord = {
   order_tracking_id: string | null;
   paid_at: string | null;
   inventory_deducted_at: string | null;
+  fulfillment_review_required: boolean | null;
+  fulfillment_review_reason: string | null;
+  inventory_conflict: boolean | null;
+  inventory_deduction_status: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -62,6 +66,10 @@ export const orderPaymentSelection = [
   "order_tracking_id",
   "paid_at",
   "inventory_deducted_at",
+  "fulfillment_review_required",
+  "fulfillment_review_reason",
+  "inventory_conflict",
+  "inventory_deduction_status",
   "created_at",
   "updated_at",
 ].join(",");
@@ -95,6 +103,10 @@ function hasPaymentFieldsChanged(previous: OrderPaymentRecord, next: OrderPaymen
     || next.payment_provider !== previous.payment_provider
     || next.paid_at !== previous.paid_at
     || next.inventory_deducted_at !== previous.inventory_deducted_at
+    || next.fulfillment_review_required !== previous.fulfillment_review_required
+    || next.fulfillment_review_reason !== previous.fulfillment_review_reason
+    || next.inventory_conflict !== previous.inventory_conflict
+    || next.inventory_deduction_status !== previous.inventory_deduction_status
   );
 }
 

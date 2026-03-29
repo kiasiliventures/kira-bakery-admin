@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Clock3, MapPin, MoreHorizontal, Store } from "lucide-react";
+import { AlertTriangle, ChevronDown, Clock3, MapPin, MoreHorizontal, Store } from "lucide-react";
 import { OrderItemsList } from "@/components/admin/order-items-list";
 import { StatusPill } from "@/components/admin/status-pill";
 import { useOrdersRealtime } from "@/components/admin/use-orders-realtime";
@@ -224,6 +224,17 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
               <div className="overflow-hidden">
                 <div className="border-t border-slate-200 px-3 pb-4 pt-3 sm:px-4">
                   <OrderItemsList items={order.items} />
+                  {order.fulfillment_review_required ? (
+                    <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 px-3 py-3 text-sm text-orange-800">
+                      <p className="inline-flex items-center gap-2 font-semibold">
+                        <AlertTriangle className="h-4 w-4" />
+                        {order.inventory_conflict ? "Paid order has a stock conflict" : "Paid order needs review"}
+                      </p>
+                      <p className="mt-1">
+                        {order.fulfillment_review_reason ?? "Payment succeeded, but fulfillment needs operator review before the order can move forward."}
+                      </p>
+                    </div>
+                  ) : null}
                   <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-3">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                       <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">

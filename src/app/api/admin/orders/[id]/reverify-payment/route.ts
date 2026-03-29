@@ -84,6 +84,9 @@ export const POST = withAdminRoute<{ id: string }>(
         paymentStatus: updatedOrder.payment_status,
         providerStatus: result.providerStatus,
         inventoryDeductedAt: updatedOrder.inventory_deducted_at,
+        fulfillmentReviewRequired: updatedOrder.fulfillment_review_required,
+        inventoryConflict: updatedOrder.inventory_conflict,
+        inventoryDeductionStatus: updatedOrder.inventory_deduction_status,
         updated: wasUpdated,
       });
 
@@ -101,6 +104,9 @@ export const POST = withAdminRoute<{ id: string }>(
           paymentStatus: result.paymentStatus,
           updated: wasUpdated,
           inventoryDeductedAt: updatedOrder.inventory_deducted_at,
+          fulfillmentReviewRequired: updatedOrder.fulfillment_review_required,
+          inventoryConflict: updatedOrder.inventory_conflict,
+          inventoryDeductionStatus: updatedOrder.inventory_deduction_status,
         },
       });
 

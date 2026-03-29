@@ -1,3 +1,4 @@
+import { isAdminOrderBlockedForReview } from "@/lib/order-display-state";
 import type { Order, OrderItem } from "@/lib/types/domain";
 
 export const orderCurrencyFormatter = new Intl.NumberFormat("en-UG", {
@@ -9,6 +10,8 @@ export const orderCurrencyFormatter = new Intl.NumberFormat("en-UG", {
 const orderStatusOptions: Record<Order["status"], Order["status"][]> = {
   "Pending Payment": ["Pending Payment"],
   Paid: ["Paid", "Ready"],
+  "Paid - Needs Review": ["Paid - Needs Review"],
+  "Paid - Stock Conflict": ["Paid - Stock Conflict"],
   Ready: ["Ready", "Completed"],
   Completed: ["Completed"],
   "Payment Failed": ["Payment Failed"],
@@ -39,6 +42,10 @@ export function getPrimaryOrderAction(
       label: "Mark ready",
       nextStatus: "Ready",
     };
+  }
+
+  if (isAdminOrderBlockedForReview(order.status)) {
+    return null;
   }
 
   if (order.status === "Ready") {
@@ -95,6 +102,28 @@ export function getOrderItemPricing(item: OrderItem): {
     unitPrice,
     subtotal: quantity !== null && unitPrice !== null ? quantity * unitPrice : unitPrice,
   };
+}
+
+export function formatInventoryAllocationStatus(
+  status: OrderItem["inventory_allocation_status"],
+): string | null {
+  if (status === "allocated") {
+    return "Inventory secured";
+  }
+
+  if (status === "partial_conflict") {
+    return "Partial stock conflict";
+  }
+
+  if (status === "conflict") {
+    return "Stock conflict";
+  }
+
+  if (status === "pending") {
+    return "Pending allocation";
+  }
+
+  return null;
 }
 
 export async function fetchAdminOrderById(orderId: string): Promise<Order | null> {

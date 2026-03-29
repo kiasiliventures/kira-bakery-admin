@@ -54,6 +54,8 @@ export type Order = {
   status:
     | "Pending Payment"
     | "Paid"
+    | "Paid - Needs Review"
+    | "Paid - Stock Conflict"
     | "Ready"
     | "Completed"
     | "Payment Failed"
@@ -62,6 +64,10 @@ export type Order = {
   order_tracking_id: string | null;
   paid_at: string | null;
   inventory_deducted_at: string | null;
+  fulfillment_review_required: boolean;
+  fulfillment_review_reason: string | null;
+  inventory_conflict: boolean;
+  inventory_deduction_status: string | null;
   total_ugx: number;
   created_at: string;
   updated_at: string;
@@ -80,6 +86,11 @@ export type OrderItem = {
   quantity: number;
   selected_size: string | null;
   selected_flavor: string | null;
+  inventory_allocation_status: string | null;
+  inventory_deducted_quantity: number;
+  inventory_conflict_quantity: number;
+  inventory_conflict_reason: string | null;
+  inventory_deducted_at: string | null;
   product_name: string | null;
   variant_name: string | null;
   created_at: string;
