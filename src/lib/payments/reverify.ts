@@ -5,6 +5,7 @@ import { requireEnv } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type NormalizedPaymentVerificationState = "paid" | "failed" | "cancelled" | "pending";
+const MANUAL_REVERIFY_PENDING_EXPIRY_MS = 10 * 60_000;
 
 export type OrderPaymentRecord = {
   id: string;
@@ -93,6 +94,24 @@ function normalizeStoredPaymentStatus(paymentStatus: string | null | undefined):
   }
 
   return "pending";
+}
+
+function isPendingPaymentVerificationState(paymentStatus: string | null | undefined) {
+  return normalizeStoredPaymentStatus(paymentStatus) === "pending";
+}
+
+function isPendingOrderLifecycleState(status: string | null | undefined) {
+  const normalized = status?.trim().toLowerCase();
+  return normalized === "pending payment" || normalized === "pending_payment" || normalized === "pending";
+}
+
+function isOrderOlderThanPendingExpiryWindow(createdAt: string) {
+  const createdAtMs = Date.parse(createdAt);
+  if (!Number.isFinite(createdAtMs)) {
+    return false;
+  }
+
+  return Date.now() - createdAtMs >= MANUAL_REVERIFY_PENDING_EXPIRY_MS;
 }
 
 function hasPaymentFieldsChanged(previous: OrderPaymentRecord, next: OrderPaymentRecord): boolean {
@@ -207,14 +226,54 @@ export async function getOrderPaymentRecord(orderId: string): Promise<OrderPayme
   return (data as OrderPaymentRecord | null) ?? null;
 }
 
+async function markExpiredPendingOrderCancelled(
+  order: OrderPaymentRecord,
+): Promise<OrderPaymentRecord> {
+  const supabaseAdmin = createSupabaseAdminClient();
+  const { data, error } = await supabaseAdmin
+    .from("orders")
+    .update({
+      status: "Cancelled",
+      order_status: "cancelled",
+    })
+    .eq("id", order.id)
+    .eq("updated_at", order.updated_at)
+    .select(orderPaymentSelection)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Pending-order cancellation failed: ${error.message}`);
+  }
+
+  if (data) {
+    return data as OrderPaymentRecord;
+  }
+
+  const latestOrder = await getOrderPaymentRecord(order.id);
+  if (!latestOrder) {
+    throw notFound("Order not found");
+  }
+
+  return latestOrder;
+}
+
 export async function reverifyOrderPayment(
   order: OrderPaymentRecord,
 ): Promise<OrderPaymentReverifyResult> {
   const authorityResult = await callPaymentAuthority(order);
-  const latestOrder = await getOrderPaymentRecord(order.id);
+  let latestOrder = await getOrderPaymentRecord(order.id);
 
   if (!latestOrder) {
     throw notFound("Order not found");
+  }
+
+  if (
+    authorityResult.verificationState === "pending"
+    && isPendingOrderLifecycleState(latestOrder.status)
+    && isPendingPaymentVerificationState(latestOrder.payment_status)
+    && isOrderOlderThanPendingExpiryWindow(latestOrder.created_at)
+  ) {
+    latestOrder = await markExpiredPendingOrderCancelled(latestOrder);
   }
 
   return {
