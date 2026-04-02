@@ -218,7 +218,8 @@ export async function getCategories(): Promise<Category[]> {
   const { data } = await supabase
     .from("categories")
     .select("*")
-    .order("sort_order", { ascending: true });
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
   return (data ?? []) as Category[];
 }
 
@@ -227,7 +228,8 @@ export async function getProducts(): Promise<Product[]> {
   const { data } = await supabase
     .from("products")
     .select("*")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
   return (data ?? []) as Product[];
 }
 

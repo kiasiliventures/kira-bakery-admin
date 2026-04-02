@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -107,6 +108,10 @@ function getStatusClassName(tone: StatusTone): string {
   return "text-sm text-slate-600";
 }
 
+function isRetiredProduct(product: Product): boolean {
+  return !product.is_published && !product.is_available && product.stock_quantity === 0;
+}
+
 export function ProductManager({ products, categories, canManage }: Props) {
   const router = useRouter();
   const draftSequenceRef = useRef(2);
@@ -123,8 +128,9 @@ export function ProductManager({ products, categories, canManage }: Props) {
   const [newCategorySortOrder, setNewCategorySortOrder] = useState("0");
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+  const [showRetiredProducts, setShowRetiredProducts] = useState(false);
 
-  const filtered = useMemo(() => {
+  const filteredProducts = useMemo(() => {
     const lower = query.toLowerCase();
     return products.filter(
       (product) =>
@@ -132,6 +138,16 @@ export function ProductManager({ products, categories, canManage }: Props) {
         (product.description ?? "").toLowerCase().includes(lower),
     );
   }, [products, query]);
+
+  const activeProducts = useMemo(
+    () => filteredProducts.filter((product) => !isRetiredProduct(product)),
+    [filteredProducts],
+  );
+
+  const retiredProducts = useMemo(
+    () => filteredProducts.filter(isRetiredProduct),
+    [filteredProducts],
+  );
 
   const categoryNames = useMemo(
     () => new Map(categoryOptions.map((category) => [category.id, category.name])),
@@ -649,7 +665,7 @@ export function ProductManager({ products, categories, canManage }: Props) {
       </div>
 
       <div className="space-y-3">
-        {filtered.map((product) => {
+        {activeProducts.map((product) => {
           const categoryName = categoryNames.get(product.category_id);
           const hasImage = Boolean(product.image_url);
 
@@ -712,7 +728,102 @@ export function ProductManager({ products, categories, canManage }: Props) {
             </div>
           );
         })}
+
+        {activeProducts.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
+            No active products match your search.
+          </div>
+        ) : null}
       </div>
+
+      {retiredProducts.length > 0 ? (
+        <section className="rounded-2xl border border-slate-200 bg-slate-50/80">
+          <button
+            type="button"
+            onClick={() => setShowRetiredProducts((current) => !current)}
+            className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
+            aria-expanded={showRetiredProducts}
+          >
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-slate-900">Retired products</p>
+              <p className="text-sm text-slate-500">
+                These products were kept for record history and are inactive on this page.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 text-sm text-slate-500">
+              <span>
+                {retiredProducts.length} product{retiredProducts.length === 1 ? "" : "s"}
+              </span>
+              {showRetiredProducts ? (
+                <ChevronDown className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              )}
+            </div>
+          </button>
+
+          {showRetiredProducts ? (
+            <div className="space-y-3 border-t border-slate-200 px-4 py-4">
+              {retiredProducts.map((product) => {
+                const categoryName = categoryNames.get(product.category_id);
+                const hasImage = Boolean(product.image_url);
+
+                return (
+                  <div
+                    key={product.id}
+                    className="rounded-2xl border border-slate-200 bg-slate-100/80 p-4 opacity-70"
+                  >
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 flex-1 items-start gap-4">
+                        <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-200">
+                          {hasImage ? (
+                            <img
+                              src={product.image_url ?? ""}
+                              alt={product.name}
+                              className="h-full w-full grayscale object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-slate-200 text-lg font-semibold text-slate-500">
+                              {product.name.slice(0, 1).toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-slate-700">{product.name}</p>
+                            <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600">
+                              Retired
+                            </span>
+                            {categoryName ? (
+                              <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600">
+                                {categoryName}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="text-sm text-slate-500">
+                            {product.description ?? "No description"}
+                          </p>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                            <span>UGX {priceFormatter.format(Number(product.base_price))}</span>
+                            <span>Stock {product.stock_quantity}</span>
+                            <span>Unavailable</span>
+                            <span>Unpublished</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 rounded-[10px] border border-slate-200 bg-white/60 px-3 py-2 text-sm text-slate-500">
+                        Inactive
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {status ? <p className={getStatusClassName(status.tone)}>{status.text}</p> : null}
     </div>
