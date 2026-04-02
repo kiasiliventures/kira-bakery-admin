@@ -74,7 +74,7 @@ export const DELETE = withAdminRoute<{ id: string }>(
 
     const { data: product, error: productLookupError } = await supabase
       .from("products")
-      .select("id")
+      .select("id,name")
       .eq("id", params.id)
       .maybeSingle();
 
@@ -83,6 +83,41 @@ export const DELETE = withAdminRoute<{ id: string }>(
     }
     if (!product) {
       throw notFound("Product not found");
+    }
+
+    const { count: orderItemCount, error: orderItemLookupError } = await supabase
+      .from("order_items")
+      .select("id", { count: "exact", head: true })
+      .eq("product_id", params.id);
+
+    if (orderItemLookupError) {
+      throw new Error(`Order usage lookup failed: ${orderItemLookupError.message}`);
+    }
+
+    if ((orderItemCount ?? 0) > 0) {
+      const { data: retiredProduct, error: retireError } = await supabase
+        .from("products")
+        .update({
+          is_published: false,
+          is_available: false,
+          stock_quantity: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", params.id)
+        .select("*")
+        .single();
+
+      if (retireError) {
+        throw new Error(`Product retire failed: ${retireError.message}`);
+      }
+
+      return jsonOk({
+        deleted: false,
+        archived: true,
+        productId: params.id,
+        product: retiredProduct,
+        message: `"${product.name}" has order history, so it was unpublished instead of deleted.`,
+      });
     }
 
     const imageFolder = `products/${params.id}`;
@@ -124,6 +159,11 @@ export const DELETE = withAdminRoute<{ id: string }>(
       throw new Error(`Product delete failed: ${productDeleteError.message}`);
     }
 
-    return jsonOk({ deleted: true, productId: params.id });
+    return jsonOk({
+      deleted: true,
+      archived: false,
+      productId: params.id,
+      message: `"${product.name}" was deleted.`,
+    });
   },
 );

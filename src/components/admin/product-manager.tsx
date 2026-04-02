@@ -417,7 +417,9 @@ export function ProductManager({ products, categories, canManage }: Props) {
   const deleteProduct = async (product: Product) => {
     if (!canManage) return;
 
-    const confirmed = window.confirm(`Delete "${product.name}" and all stored images?`);
+    const confirmed = window.confirm(
+      `Delete "${product.name}"? If it has existing orders, it will be unpublished instead so order history stays intact.`,
+    );
     if (!confirmed) return;
 
     setDeletingProductId(product.id);
@@ -436,6 +438,14 @@ export function ProductManager({ products, categories, canManage }: Props) {
     }
 
     router.refresh();
+    setStatus({
+      tone: "success",
+      text:
+        payload.data?.message ??
+        (payload.data?.archived
+          ? "Product had order history and was unpublished instead of deleted."
+          : "Product deleted."),
+    });
     setDeletingProductId(null);
   };
 

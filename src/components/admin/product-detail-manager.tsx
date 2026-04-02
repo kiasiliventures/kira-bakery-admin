@@ -183,7 +183,9 @@ export function ProductDetailManager({ product, categories, canManage }: Props) 
   const deleteProduct = async () => {
     if (!canManage) return;
 
-    const confirmed = window.confirm("Delete this product and all uploaded images?");
+    const confirmed = window.confirm(
+      "Delete this product? If it has existing orders, it will be unpublished instead so order history stays intact.",
+    );
     if (!confirmed) return;
 
     setActionState("deleting");
@@ -198,6 +200,24 @@ export function ProductDetailManager({ product, categories, canManage }: Props) 
         text: payload.error?.message ?? "Failed to delete product",
       });
       setActionState("idle");
+      return;
+    }
+
+    if (payload.data?.archived) {
+      const retiredProduct = payload.data?.product as Product | undefined;
+      setIsPublished(false);
+      setStockQuantity("0");
+      if (retiredProduct?.updated_at) {
+        setCurrentUpdatedAt(retiredProduct.updated_at);
+      }
+      setStatus({
+        tone: "success",
+        text:
+          payload.data?.message ??
+          "This product has order history, so it was unpublished instead of deleted.",
+      });
+      setActionState("idle");
+      router.refresh();
       return;
     }
 
@@ -359,7 +379,7 @@ export function ProductDetailManager({ product, categories, canManage }: Props) 
           <div className="space-y-1">
             <p className="text-sm font-medium text-slate-900">Actions</p>
             <p className="text-sm text-slate-500">
-              Save product edits, explicitly unpublish the product, or permanently remove it.
+              Save product edits, explicitly unpublish the product, or remove it when no orders depend on it.
             </p>
           </div>
 
