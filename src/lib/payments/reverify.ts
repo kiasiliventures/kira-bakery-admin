@@ -75,6 +75,21 @@ export const orderPaymentSelection = [
   "updated_at",
 ].join(",");
 
+function isOrderPaymentRecord(value: unknown): value is OrderPaymentRecord {
+  return (
+    typeof value === "object"
+    && value !== null
+    && "id" in value
+    && typeof value.id === "string"
+    && "status" in value
+    && typeof value.status === "string"
+    && "created_at" in value
+    && typeof value.created_at === "string"
+    && "updated_at" in value
+    && typeof value.updated_at === "string"
+  );
+}
+
 function normalizeStoredPaymentStatus(paymentStatus: string | null | undefined): NormalizedPaymentVerificationState {
   const normalized = paymentStatus?.trim().toLowerCase();
   if (!normalized || normalized === "unpaid") {
@@ -223,7 +238,15 @@ export async function getOrderPaymentRecord(orderId: string): Promise<OrderPayme
     throw new Error(`Order payment lookup failed: ${error.message}`);
   }
 
-  return (data as OrderPaymentRecord | null) ?? null;
+  if (!data) {
+    return null;
+  }
+
+  if (!isOrderPaymentRecord(data)) {
+    throw new Error("Order payment lookup returned an unexpected row shape.");
+  }
+
+  return data;
 }
 
 async function markExpiredPendingOrderCancelled(
@@ -245,8 +268,8 @@ async function markExpiredPendingOrderCancelled(
     throw new Error(`Pending-order cancellation failed: ${error.message}`);
   }
 
-  if (data) {
-    return data as OrderPaymentRecord;
+  if (isOrderPaymentRecord(data)) {
+    return data;
   }
 
   const latestOrder = await getOrderPaymentRecord(order.id);
