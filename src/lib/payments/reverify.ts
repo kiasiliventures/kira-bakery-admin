@@ -2,10 +2,27 @@ import "server-only";
 
 import { badRequest, conflict, notFound } from "@/lib/http/errors";
 import { requireEnv } from "@/lib/env";
+import { deriveAdminDisplayOrderStatus } from "@/lib/order-display-state";
+import { logger } from "@/lib/logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type NormalizedPaymentVerificationState = "paid" | "failed" | "cancelled" | "pending";
 const MANUAL_REVERIFY_PENDING_EXPIRY_MS = 10 * 60_000;
+const pendingOrderSelection = [
+  "id",
+  "status",
+  "payment_status",
+  "order_tracking_id",
+  "created_at",
+  "updated_at",
+].join(",");
+const cancellablePendingStatuses = [
+  "Pending",
+  "pending",
+  "Pending Payment",
+  "pending payment",
+  "pending_payment",
+];
 
 export type OrderPaymentRecord = {
   id: string;
@@ -32,6 +49,24 @@ export type OrderPaymentReverifyResult = {
   providerStatus: string | null;
   paymentStatus: NormalizedPaymentVerificationState;
   updated: boolean;
+};
+
+type PendingOrderWithoutTrackingRecord = {
+  id: string;
+  status: string;
+  payment_status: string | null;
+  order_tracking_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PendingOrdersWithoutTrackingCleanupResult = {
+  scanned: number;
+  matched: number;
+  cancelled: number;
+  skipped: number;
+  cancelledOrderIds: string[];
+  skippedOrderIds: string[];
 };
 
 type PaymentAuthorityVerificationResult = {
@@ -90,6 +125,21 @@ function isOrderPaymentRecord(value: unknown): value is OrderPaymentRecord {
   );
 }
 
+function isPendingOrderWithoutTrackingRecord(value: unknown): value is PendingOrderWithoutTrackingRecord {
+  return (
+    typeof value === "object"
+    && value !== null
+    && "id" in value
+    && typeof value.id === "string"
+    && "status" in value
+    && typeof value.status === "string"
+    && "created_at" in value
+    && typeof value.created_at === "string"
+    && "updated_at" in value
+    && typeof value.updated_at === "string"
+  );
+}
+
 function normalizeStoredPaymentStatus(paymentStatus: string | null | undefined): NormalizedPaymentVerificationState {
   const normalized = paymentStatus?.trim().toLowerCase();
   if (!normalized || normalized === "unpaid") {
@@ -127,6 +177,10 @@ function isOrderOlderThanPendingExpiryWindow(createdAt: string) {
   }
 
   return Date.now() - createdAtMs >= MANUAL_REVERIFY_PENDING_EXPIRY_MS;
+}
+
+function isTrackingIdMissing(trackingId: string | null | undefined) {
+  return !trackingId?.trim();
 }
 
 function hasPaymentFieldsChanged(previous: OrderPaymentRecord, next: OrderPaymentRecord): boolean {
@@ -249,18 +303,20 @@ export async function getOrderPaymentRecord(orderId: string): Promise<OrderPayme
   return data;
 }
 
-async function markExpiredPendingOrderCancelled(
-  order: OrderPaymentRecord,
-): Promise<OrderPaymentRecord> {
+async function markPendingOrderCancelled(
+  order: Pick<OrderPaymentRecord, "id" | "updated_at">,
+): Promise<{ order: OrderPaymentRecord; cancelled: boolean }> {
   const supabaseAdmin = createSupabaseAdminClient();
   const { data, error } = await supabaseAdmin
     .from("orders")
     .update({
       status: "Cancelled",
       order_status: "cancelled",
+      payment_status: "cancelled",
     })
     .eq("id", order.id)
     .eq("updated_at", order.updated_at)
+    .in("status", cancellablePendingStatuses)
     .select(orderPaymentSelection)
     .maybeSingle();
 
@@ -269,7 +325,7 @@ async function markExpiredPendingOrderCancelled(
   }
 
   if (isOrderPaymentRecord(data)) {
-    return data;
+    return { order: data, cancelled: true };
   }
 
   const latestOrder = await getOrderPaymentRecord(order.id);
@@ -277,7 +333,78 @@ async function markExpiredPendingOrderCancelled(
     throw notFound("Order not found");
   }
 
-  return latestOrder;
+  return {
+    order: latestOrder,
+    cancelled:
+      latestOrder.status.trim().toLowerCase() === "cancelled"
+      || normalizeStoredPaymentStatus(latestOrder.payment_status) === "cancelled",
+  };
+}
+
+async function markExpiredPendingOrderCancelled(
+  order: OrderPaymentRecord,
+): Promise<OrderPaymentRecord> {
+  const result = await markPendingOrderCancelled(order);
+  return result.order;
+}
+
+export async function cancelPendingOrdersWithoutTrackingIds(): Promise<PendingOrdersWithoutTrackingCleanupResult> {
+  const supabaseAdmin = createSupabaseAdminClient();
+  const { data, error } = await supabaseAdmin
+    .from("orders")
+    .select(pendingOrderSelection)
+    .in("status", cancellablePendingStatuses)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(`Pending-order cleanup lookup failed: ${error.message}`);
+  }
+
+  const candidates = (data ?? []).filter(isPendingOrderWithoutTrackingRecord);
+  const matched = candidates.filter((candidate) => {
+    if (!isTrackingIdMissing(candidate.order_tracking_id)) {
+      return false;
+    }
+
+    return (
+      deriveAdminDisplayOrderStatus({
+        status: candidate.status,
+        paymentStatus: candidate.payment_status,
+      }) === "Pending Payment"
+    );
+  });
+
+  const cancelledOrderIds: string[] = [];
+  const skippedOrderIds: string[] = [];
+
+  for (const candidate of matched) {
+    const result = await markPendingOrderCancelled(candidate);
+
+    if (result.cancelled) {
+      cancelledOrderIds.push(candidate.id);
+      continue;
+    }
+
+    skippedOrderIds.push(candidate.id);
+  }
+
+  logger.info("pending_orders_without_tracking_cleanup_complete", {
+    scanned: candidates.length,
+    matched: matched.length,
+    cancelled: cancelledOrderIds.length,
+    skipped: skippedOrderIds.length,
+    cancelledOrderIds,
+    skippedOrderIds,
+  });
+
+  return {
+    scanned: candidates.length,
+    matched: matched.length,
+    cancelled: cancelledOrderIds.length,
+    skipped: skippedOrderIds.length,
+    cancelledOrderIds,
+    skippedOrderIds,
+  };
 }
 
 export async function reverifyOrderPayment(
