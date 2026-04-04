@@ -249,20 +249,21 @@ export async function getVariantsByProductId(productId: string): Promise<Product
   return (data ?? []) as ProductVariant[];
 }
 
-export async function getOrders(): Promise<Order[]> {
+export async function getOrders(options?: { limit?: number }): Promise<Order[]> {
   const supabase = await createSupabaseServerClient();
+  const limit = Math.max(1, Math.min(100, Math.trunc(options?.limit ?? 100)));
   const modern = await supabase
     .from("orders")
     .select(modernOrderSelection)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(limit);
 
   if (modern.error?.code === "42703") {
     const legacy = await supabase
       .from("orders")
       .select(legacyOrderSelection)
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(limit);
 
     return ((legacy.data ?? []) as LegacyOrderRowWithItems[]).map(mapLegacyOrder);
   }

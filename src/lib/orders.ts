@@ -148,6 +148,25 @@ export async function fetchAdminOrderById(orderId: string): Promise<Order | null
   return payload.data?.order ?? null;
 }
 
+export async function fetchAdminOrders(limit = 100): Promise<Order[]> {
+  const normalizedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+  const response = await fetch(`/api/admin/orders?limit=${normalizedLimit}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { ok?: boolean; data?: { orders?: Order[] }; error?: { message?: string } }
+    | null;
+
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.error?.message ?? "Failed to fetch orders");
+  }
+
+  return payload.data?.orders ?? [];
+}
+
 export async function patchOrderStatus(
   order: Pick<Order, "id" | "updated_at">,
   nextStatus: Order["status"],

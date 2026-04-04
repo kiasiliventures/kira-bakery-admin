@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  fetchAdminOrders,
   fetchAdminOrderById,
   formatDeliveryMethod,
   formatOrderReference,
@@ -68,6 +69,11 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
     setExpandedId((current) => (current === orderId ? null : current));
   };
 
+  const refreshRecentOrders = async () => {
+    const nextOrders = await fetchAdminOrders(RECENT_ORDER_LIMIT);
+    setRecentOrders(nextOrders.slice(0, RECENT_ORDER_LIMIT));
+  };
+
   const reconcileOrder = async (orderId: string) => {
     const order = await fetchAdminOrderById(orderId);
 
@@ -86,6 +92,7 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
     }
 
     if (!event.orderId) {
+      void refreshRecentOrders();
       return;
     }
 
@@ -114,7 +121,7 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
   useOrdersRealtime({
     source: "DashboardRecentOrders",
     autoRefresh: false,
-    refreshOnFallback: true,
+    refreshOnFallback: false,
     onInsert: scheduleReconcile,
     onRefresh: scheduleReconcile,
   });

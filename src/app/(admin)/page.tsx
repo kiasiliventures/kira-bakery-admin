@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { guardPage } from "@/lib/auth/page-guard";
 import { getDashboardMetrics, getOrders, getProducts } from "@/lib/supabase/queries";
 
+const RECENT_ORDER_LIMIT = 6;
 const trend = [6, 9, 7, 10, 11, 12, 14];
 const currencyFormatter = new Intl.NumberFormat("en-UG", {
   style: "currency",
@@ -16,7 +17,7 @@ export default async function DashboardPage() {
   const identity = await guardPage(["admin", "manager", "staff"]);
   const [metrics, orders, products] = await Promise.all([
     getDashboardMetrics(),
-    getOrders(),
+    getOrders({ limit: RECENT_ORDER_LIMIT }),
     getProducts(),
   ]);
 

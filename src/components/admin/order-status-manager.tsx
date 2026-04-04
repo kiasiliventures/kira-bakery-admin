@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { OrderItemsList } from "@/components/admin/order-items-list";
 import { StatusPill } from "@/components/admin/status-pill";
 import { useOrdersRealtime } from "@/components/admin/use-orders-realtime";
 import { Button } from "@/components/ui/button";
 import {
+  fetchAdminOrders,
   fetchAdminOrderById,
   formatDeliveryMethod,
   formatOrderReference,
@@ -39,7 +39,6 @@ type Props = {
 };
 
 export function OrderStatusManager({ orders, canUpdateStatus }: Props) {
-  const router = useRouter();
   const [localOrders, setLocalOrders] = useState<Order[]>(orders);
   const [status, setStatus] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -60,6 +59,11 @@ export function OrderStatusManager({ orders, canUpdateStatus }: Props) {
     setLocalOrders((current) => current.filter((order) => order.id !== orderId));
   };
 
+  const refreshOrders = async () => {
+    const nextOrders = await fetchAdminOrders();
+    setLocalOrders(nextOrders);
+  };
+
   const reconcileOrder = async (orderId: string) => {
     const order = await fetchAdminOrderById(orderId);
 
@@ -78,7 +82,7 @@ export function OrderStatusManager({ orders, canUpdateStatus }: Props) {
     }
 
     if (!event.orderId) {
-      router.refresh();
+      void refreshOrders();
       return;
     }
 
@@ -108,7 +112,7 @@ export function OrderStatusManager({ orders, canUpdateStatus }: Props) {
     source: "OrderStatusManager",
     showNewOrderToast: true,
     autoRefresh: false,
-    refreshOnFallback: true,
+    refreshOnFallback: false,
     onInsert: scheduleReconcile,
     onRefresh: scheduleReconcile,
   });
