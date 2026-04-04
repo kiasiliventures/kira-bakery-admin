@@ -1,6 +1,7 @@
 import "server-only";
 
 import { badRequest, conflict, notFound } from "@/lib/http/errors";
+import { fetchWithTimeout } from "@/lib/http/fetch";
 import { requireEnv } from "@/lib/env";
 import { deriveAdminDisplayOrderStatus } from "@/lib/order-display-state";
 import { logger } from "@/lib/logger";
@@ -89,6 +90,8 @@ type PaymentAuthorityVerificationResult = {
   orderSnapshot: unknown;
   message: string;
 };
+
+const PAYMENT_AUTHORITY_TIMEOUT_MS = 8_000;
 
 export const orderPaymentSelection = [
   "id",
@@ -236,7 +239,7 @@ async function callPaymentAuthority(order: OrderPaymentRecord): Promise<PaymentA
   }
 
   const url = `${getPaymentAuthorityBaseUrl()}/api/internal/payments/orders/${order.id}/verify`;
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -247,6 +250,9 @@ async function callPaymentAuthority(order: OrderPaymentRecord): Promise<PaymentA
       source: "admin_reverify",
     }),
     cache: "no-store",
+  }, {
+    operationName: "Payment authority verification",
+    timeoutMs: PAYMENT_AUTHORITY_TIMEOUT_MS,
   });
   const payload = await parseAuthorityResponse(response);
 

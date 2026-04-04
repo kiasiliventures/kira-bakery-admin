@@ -1,7 +1,9 @@
 import "server-only";
 
 import { requireEnv } from "@/lib/env";
+import { fetchWithTimeout } from "@/lib/http/fetch";
 import { logger } from "@/lib/logger";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type ReadyNotificationOrder = {
   id?: string | null;
@@ -12,17 +14,20 @@ type ReadyNotificationOrder = {
 type ReadyNotificationTriggerResult = {
   attempted: boolean;
   triggered: boolean;
+  queued: boolean;
+  duplicate: boolean;
+  kickoffAccepted: boolean;
   request: {
     url: string;
     method: "POST";
     headers: Record<string, string>;
     body: {
-      source: "admin_order_status_patch";
-      orderStatus: "Ready";
-      orderUpdatedAt: string;
+      idempotencyKey: string;
     };
   } | null;
 };
+
+const STOREFRONT_READY_NOTIFICATION_TIMEOUT_MS = 8_000;
 
 function getStorefrontBaseUrl(): string {
   return requireEnv("STOREFRONT_BASE_URL").replace(/\/+$/, "");
@@ -36,23 +41,25 @@ function normalizeOrderStatus(status: string | null | undefined): string {
   return status?.trim().toLowerCase() ?? "";
 }
 
+function buildIdempotencyKey(order: { id: string; updatedAt: string }) {
+  return `order-ready:${order.id}:${order.updatedAt}`;
+}
+
 function buildReadyNotificationRequest(order: { id: string; updatedAt: string }) {
-  const url = `${getStorefrontBaseUrl()}/api/internal/push/orders/${order.id}/ready`;
-  const idempotencyKey = `order-ready:${order.id}:${order.updatedAt}`;
+  const idempotencyKey = buildIdempotencyKey(order);
+  const url = `${getStorefrontBaseUrl()}/api/internal/push/order-ready/process`;
 
   return {
+    idempotencyKey,
     url,
     method: "POST" as const,
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
       Authorization: `Bearer ${getStorefrontAuthorityToken()}`,
-      "Idempotency-Key": idempotencyKey,
     },
     body: {
-      source: "admin_order_status_patch" as const,
-      orderStatus: "Ready" as const,
-      orderUpdatedAt: order.updatedAt,
+      idempotencyKey,
     },
   };
 }
@@ -83,6 +90,34 @@ async function parseResponsePayload(response: Response): Promise<unknown> {
   }
 }
 
+async function enqueueReadyNotification(order: {
+  id: string;
+  updatedAt: string;
+}) {
+  const supabaseAdmin = createSupabaseAdminClient();
+  const idempotencyKey = buildIdempotencyKey(order);
+  const { error } = await supabaseAdmin
+    .from("push_notification_dispatches")
+    .insert({
+      idempotency_key: idempotencyKey,
+      notification_type: "order_ready",
+      order_id: order.id,
+      order_updated_at: order.updatedAt,
+      source: "admin_order_status_patch",
+      next_attempt_at: new Date().toISOString(),
+    });
+
+  if (!error) {
+    return { duplicate: false, idempotencyKey };
+  }
+
+  if (error.code === "23505") {
+    return { duplicate: true, idempotencyKey };
+  }
+
+  throw new Error(`Unable to enqueue storefront ready notification: ${error.message}`);
+}
+
 export function didTransitionToReady(input: {
   requestedStatus: string;
   previousUpdatedAt: string;
@@ -101,13 +136,18 @@ export async function triggerStorefrontReadyNotification(order: {
   updatedAt: string;
 }): Promise<ReadyNotificationTriggerResult> {
   const request = buildReadyNotificationRequest(order);
+  let enqueueResult: Awaited<ReturnType<typeof enqueueReadyNotification>> | null = null;
 
   try {
-    const response = await fetch(request.url, {
+    enqueueResult = await enqueueReadyNotification(order);
+    const response = await fetchWithTimeout(request.url, {
       method: request.method,
       headers: request.headers,
       body: JSON.stringify(request.body),
       cache: "no-store",
+    }, {
+      operationName: "Storefront ready notification",
+      timeoutMs: STOREFRONT_READY_NOTIFICATION_TIMEOUT_MS,
     });
     const payload = await parseResponsePayload(response);
 
@@ -120,7 +160,10 @@ export async function triggerStorefrontReadyNotification(order: {
 
       return {
         attempted: true,
-        triggered: false,
+        triggered: true,
+        queued: true,
+        duplicate: enqueueResult.duplicate,
+        kickoffAccepted: false,
         request,
       };
     }
@@ -133,6 +176,9 @@ export async function triggerStorefrontReadyNotification(order: {
     return {
       attempted: true,
       triggered: true,
+      queued: true,
+      duplicate: enqueueResult.duplicate,
+      kickoffAccepted: true,
       request,
     };
   } catch (error) {
@@ -144,7 +190,10 @@ export async function triggerStorefrontReadyNotification(order: {
     return {
       attempted: true,
       triggered: false,
-      request,
+      queued: Boolean(enqueueResult),
+      duplicate: enqueueResult?.duplicate ?? false,
+      kickoffAccepted: false,
+      request: enqueueResult ? request : null,
     };
   }
 }
