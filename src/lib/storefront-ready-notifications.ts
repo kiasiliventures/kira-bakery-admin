@@ -2,6 +2,10 @@ import "server-only";
 
 import { requireEnv } from "@/lib/env";
 import { fetchWithTimeout } from "@/lib/http/fetch";
+import {
+  requireInternalRequestSigningSecret,
+  signInternalRequestToken,
+} from "@/lib/internal-auth";
 import { logger } from "@/lib/logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -28,13 +32,14 @@ type ReadyNotificationTriggerResult = {
 };
 
 const STOREFRONT_READY_NOTIFICATION_TIMEOUT_MS = 8_000;
+const READY_PROCESS_PURPOSE = "storefront_order_ready_process";
 
 function getStorefrontBaseUrl(): string {
   return requireEnv("STOREFRONT_BASE_URL").replace(/\/+$/, "");
 }
 
-function getStorefrontAuthorityToken(): string {
-  return requireEnv("STOREFRONT_INTERNAL_AUTH_TOKEN");
+function getStorefrontSigningSecret(): string {
+  return requireInternalRequestSigningSecret("STOREFRONT_INTERNAL_AUTH_TOKEN");
 }
 
 function normalizeOrderStatus(status: string | null | undefined): string {
@@ -47,7 +52,17 @@ function buildIdempotencyKey(order: { id: string; updatedAt: string }) {
 
 function buildReadyNotificationRequest(order: { id: string; updatedAt: string }) {
   const idempotencyKey = buildIdempotencyKey(order);
-  const url = `${getStorefrontBaseUrl()}/api/internal/push/order-ready/process`;
+  const path = "/api/internal/push/order-ready/process";
+  const url = `${getStorefrontBaseUrl()}${path}`;
+  const token = signInternalRequestToken({
+    secret: getStorefrontSigningSecret(),
+    issuer: "kira-bakery-admin",
+    audience: "kira-bakery-storefront",
+    purpose: READY_PROCESS_PURPOSE,
+    method: "POST",
+    path,
+    idempotencyKey,
+  });
 
   return {
     idempotencyKey,
@@ -56,7 +71,7 @@ function buildReadyNotificationRequest(order: { id: string; updatedAt: string })
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      Authorization: `Bearer ${getStorefrontAuthorityToken()}`,
+      Authorization: `Bearer ${token}`,
     },
     body: {
       idempotencyKey,

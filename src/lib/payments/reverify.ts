@@ -3,6 +3,10 @@ import "server-only";
 import { badRequest, conflict, notFound } from "@/lib/http/errors";
 import { fetchWithTimeout } from "@/lib/http/fetch";
 import { requireEnv } from "@/lib/env";
+import {
+  requireInternalRequestSigningSecret,
+  signInternalRequestToken,
+} from "@/lib/internal-auth";
 import { deriveAdminDisplayOrderStatus } from "@/lib/order-display-state";
 import { logger } from "@/lib/logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -92,6 +96,7 @@ type PaymentAuthorityVerificationResult = {
 };
 
 const PAYMENT_AUTHORITY_TIMEOUT_MS = 8_000;
+const PAYMENT_VERIFY_PURPOSE = "payment_authority_verify";
 
 export const orderPaymentSelection = [
   "id",
@@ -205,8 +210,8 @@ function getPaymentAuthorityBaseUrl(): string {
   return requireEnv("PAYMENT_AUTHORITY_BASE_URL").replace(/\/+$/, "");
 }
 
-function getPaymentAuthorityToken(): string {
-  return requireEnv("INTERNAL_PAYMENT_AUTHORITY_TOKEN");
+function getPaymentAuthoritySigningSecret(): string {
+  return requireInternalRequestSigningSecret("INTERNAL_PAYMENT_AUTHORITY_TOKEN");
 }
 
 async function parseAuthorityResponse(response: Response): Promise<unknown> {
@@ -238,13 +243,23 @@ async function callPaymentAuthority(order: OrderPaymentRecord): Promise<PaymentA
     throw badRequest("Order does not have a payment tracking ID yet");
   }
 
-  const url = `${getPaymentAuthorityBaseUrl()}/api/internal/payments/orders/${order.id}/verify`;
+  const path = `/api/internal/payments/orders/${order.id}/verify`;
+  const url = `${getPaymentAuthorityBaseUrl()}${path}`;
+  const token = signInternalRequestToken({
+    secret: getPaymentAuthoritySigningSecret(),
+    issuer: "kira-bakery-admin",
+    audience: "kira-bakery-storefront",
+    purpose: PAYMENT_VERIFY_PURPOSE,
+    method: "POST",
+    path,
+    orderId: order.id,
+  });
   const response = await fetchWithTimeout(url, {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      Authorization: `Bearer ${getPaymentAuthorityToken()}`,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
       source: "admin_reverify",
