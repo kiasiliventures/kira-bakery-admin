@@ -360,7 +360,8 @@ export async function cancelPendingOrdersWithoutTrackingIds(): Promise<PendingOr
     throw new Error(`Pending-order cleanup lookup failed: ${error.message}`);
   }
 
-  const candidates = (data ?? []).filter(isPendingOrderWithoutTrackingRecord);
+  const rows: unknown[] = Array.isArray(data) ? data : [];
+  const candidates = rows.filter(isPendingOrderWithoutTrackingRecord);
   const matched = candidates.filter((candidate) => {
     if (!isTrackingIdMissing(candidate.order_tracking_id)) {
       return false;
