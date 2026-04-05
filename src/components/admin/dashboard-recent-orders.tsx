@@ -19,6 +19,7 @@ import {
   getPrimaryOrderAction,
   orderCurrencyFormatter,
   patchOrderStatus,
+  reconcilePendingTrackedPayments,
   reverifyOrderPayment,
 } from "@/lib/orders";
 import type { OrdersRealtimeEvent } from "@/lib/orders-realtime";
@@ -65,7 +66,7 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
   const [statusMessage, setStatusMessage] = useState("");
   const [recentOrders, setRecentOrders] = useState<Order[]>(() => orders.slice(0, RECENT_ORDER_LIMIT));
   const reconcileTimeoutsRef = useRef<Map<string, number>>(new Map());
-  const autoReverifyInFlightRef = useRef<Set<string>>(new Set());
+  const autoReverifyInFlightRef = useRef(false);
 
   useEffect(() => {
     setRecentOrders(orders.slice(0, RECENT_ORDER_LIMIT));
@@ -138,32 +139,23 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
       return;
     }
 
-    const pendingOrders = recentOrders.filter((order) => order.status === "Pending Payment");
-    if (pendingOrders.length === 0) {
-      return;
-    }
-
     let cancelled = false;
 
     const runAutoReverify = async () => {
-      if (document.visibilityState !== "visible") {
+      if (cancelled || document.visibilityState !== "visible" || autoReverifyInFlightRef.current) {
         return;
       }
 
-      for (const order of pendingOrders) {
-        if (cancelled || autoReverifyInFlightRef.current.has(order.id)) {
-          continue;
+      autoReverifyInFlightRef.current = true;
+      try {
+        const stats = await reconcilePendingTrackedPayments();
+        if (stats.verified > 0 || stats.updated > 0) {
+          await refreshRecentOrders();
         }
-
-        autoReverifyInFlightRef.current.add(order.id);
-        try {
-          await reverifyOrderPayment(order);
-          await reconcileOrder(order.id);
-        } catch {
-          // Keep the dashboard quiet on background retries; manual action still exists.
-        } finally {
-          autoReverifyInFlightRef.current.delete(order.id);
-        }
+      } catch {
+        // Keep the dashboard quiet on background retries; manual action still exists.
+      } finally {
+        autoReverifyInFlightRef.current = false;
       }
     };
 
@@ -176,7 +168,7 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [canUpdateStatus, recentOrders]);
+  }, [canUpdateStatus]);
 
   useOrdersRealtime({
     source: "DashboardRecentOrders",

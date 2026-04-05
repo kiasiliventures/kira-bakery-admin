@@ -11,6 +11,10 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type NormalizedPaymentVerificationState = "paid" | "failed" | "cancelled" | "pending";
 const PENDING_PAYMENT_SOFT_CANCELLATION_MS = 15 * 60_000;
+export const PENDING_PAYMENT_RECONCILE_LOOKBACK_MS = 2 * 60 * 60_000;
+export const PENDING_PAYMENT_REVERIFY_THROTTLE_MS = 5 * 60_000;
+export const PENDING_PAYMENT_RECONCILE_SCAN_LIMIT = 50;
+export const PENDING_PAYMENT_RECONCILE_VERIFY_LIMIT = 10;
 const cancellablePendingStatuses = [
   "Pending",
   "pending",
@@ -29,6 +33,7 @@ export type OrderPaymentRecord = {
   payment_reference: string | null;
   payment_redirect_url: string | null;
   order_tracking_id: string | null;
+  payment_last_verified_at: string | null;
   paid_at: string | null;
   inventory_deducted_at: string | null;
   fulfillment_review_required: boolean | null;
@@ -44,6 +49,20 @@ export type OrderPaymentReverifyResult = {
   providerStatus: string | null;
   paymentStatus: NormalizedPaymentVerificationState;
   updated: boolean;
+};
+
+export type PendingTrackedPaymentsReconcileStats = {
+  scanned: number;
+  verified: number;
+  updated: number;
+  skipped: number;
+  skippedRecentlyVerified: number;
+  skippedOverCap: number;
+  errors: number;
+  verifiedOrderIds: string[];
+  updatedOrderIds: string[];
+  skippedOrderIds: string[];
+  errorOrderIds: string[];
 };
 
 type PaymentAuthorityVerificationResult = {
@@ -80,6 +99,7 @@ export const orderPaymentSelection = [
   "payment_reference",
   "payment_redirect_url",
   "order_tracking_id",
+  "payment_last_verified_at",
   "paid_at",
   "inventory_deducted_at",
   "fulfillment_review_required",
@@ -142,6 +162,19 @@ function isOrderOlderThanPendingExpiryWindow(createdAt: string) {
   }
 
   return Date.now() - createdAtMs >= PENDING_PAYMENT_SOFT_CANCELLATION_MS;
+}
+
+function isOlderThanThreshold(value: string | null | undefined, thresholdMs: number, nowMs: number) {
+  if (!value) {
+    return true;
+  }
+
+  const parsedMs = Date.parse(value);
+  if (!Number.isFinite(parsedMs)) {
+    return true;
+  }
+
+  return nowMs - parsedMs >= thresholdMs;
 }
 
 function hasPaymentFieldsChanged(previous: OrderPaymentRecord, next: OrderPaymentRecord): boolean {
@@ -275,6 +308,121 @@ export async function getOrderPaymentRecord(orderId: string): Promise<OrderPayme
   }
 
   return data;
+}
+
+export async function listRecentTrackedPendingOrders(options?: {
+  now?: Date;
+  lookbackMs?: number;
+  limit?: number;
+}): Promise<OrderPaymentRecord[]> {
+  const now = options?.now ?? new Date();
+  const lookbackMs = options?.lookbackMs ?? PENDING_PAYMENT_RECONCILE_LOOKBACK_MS;
+  const createdAfter = new Date(now.getTime() - lookbackMs).toISOString();
+  const supabaseAdmin = createSupabaseAdminClient();
+  let query = supabaseAdmin
+    .from("orders")
+    .select(orderPaymentSelection)
+    .eq("status", "Pending Payment")
+    .not("order_tracking_id", "is", null)
+    .gte("created_at", createdAfter)
+    .order("created_at", { ascending: false });
+
+  if (typeof options?.limit === "number" && Number.isFinite(options.limit)) {
+    query = query.limit(Math.max(1, Math.min(200, Math.trunc(options.limit))));
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Pending tracked order lookup failed: ${error.message}`);
+  }
+
+  return ((data ?? []) as unknown[]).filter(isOrderPaymentRecord);
+}
+
+function isTrackedPendingOrderEligibleForReconcile(
+  order: OrderPaymentRecord,
+  nowMs: number,
+  throttleMs: number,
+) {
+  return (
+    isPendingOrderLifecycleState(order.status)
+    && isPendingPaymentVerificationState(order.payment_status)
+    && Boolean(order.order_tracking_id)
+    && isOlderThanThreshold(order.payment_last_verified_at, throttleMs, nowMs)
+  );
+}
+
+export async function reconcilePendingTrackedPayments(options?: {
+  now?: Date;
+  lookbackMs?: number;
+  scanLimit?: number;
+  verifyLimit?: number;
+  throttleMs?: number;
+  listOrders?: (options?: { now?: Date; lookbackMs?: number; limit?: number }) => Promise<OrderPaymentRecord[]>;
+  reverify?: (order: OrderPaymentRecord) => Promise<OrderPaymentReverifyResult>;
+}): Promise<PendingTrackedPaymentsReconcileStats> {
+  const now = options?.now ?? new Date();
+  const nowMs = now.getTime();
+  const throttleMs = options?.throttleMs ?? PENDING_PAYMENT_REVERIFY_THROTTLE_MS;
+  const verifyLimit = options?.verifyLimit ?? PENDING_PAYMENT_RECONCILE_VERIFY_LIMIT;
+  const listOrders = options?.listOrders ?? listRecentTrackedPendingOrders;
+  const reverify = options?.reverify ?? reverifyOrderPayment;
+  const scannedOrders = await listOrders({
+    now,
+    lookbackMs: options?.lookbackMs,
+    limit: options?.scanLimit,
+  });
+
+  const eligibleOrders: OrderPaymentRecord[] = [];
+  const skippedOrderIds: string[] = [];
+  let skippedRecentlyVerified = 0;
+
+  for (const order of scannedOrders) {
+    if (isTrackedPendingOrderEligibleForReconcile(order, nowMs, throttleMs)) {
+      eligibleOrders.push(order);
+      continue;
+    }
+
+    skippedOrderIds.push(order.id);
+    skippedRecentlyVerified += 1;
+  }
+
+  const ordersToVerify = eligibleOrders.slice(0, verifyLimit);
+  const skippedOverCap = Math.max(0, eligibleOrders.length - ordersToVerify.length);
+  if (skippedOverCap > 0) {
+    skippedOrderIds.push(...eligibleOrders.slice(verifyLimit).map((order) => order.id));
+  }
+
+  const verifiedOrderIds: string[] = [];
+  const updatedOrderIds: string[] = [];
+  const errorOrderIds: string[] = [];
+
+  for (const order of ordersToVerify) {
+    try {
+      const result = await reverify(order);
+      verifiedOrderIds.push(order.id);
+      if (result.updated) {
+        updatedOrderIds.push(order.id);
+      }
+    } catch {
+      errorOrderIds.push(order.id);
+    }
+  }
+
+  return {
+    scanned: scannedOrders.length,
+    verified: verifiedOrderIds.length,
+    updated: updatedOrderIds.length,
+    skipped: skippedOrderIds.length,
+    skippedRecentlyVerified,
+    skippedOverCap,
+    errors: errorOrderIds.length,
+    verifiedOrderIds,
+    updatedOrderIds,
+    skippedOrderIds,
+    errorOrderIds,
+  };
 }
 
 async function markPendingOrderCancelled(

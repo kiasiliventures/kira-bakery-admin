@@ -1,6 +1,20 @@
 import { isAdminOrderBlockedForReview } from "@/lib/order-display-state";
 import type { Order, OrderItem } from "@/lib/types/domain";
 
+export type PendingTrackedPaymentsReconcileStats = {
+  scanned: number;
+  verified: number;
+  updated: number;
+  skipped: number;
+  skippedRecentlyVerified: number;
+  skippedOverCap: number;
+  errors: number;
+  verifiedOrderIds: string[];
+  updatedOrderIds: string[];
+  skippedOrderIds: string[];
+  errorOrderIds: string[];
+};
+
 export const orderCurrencyFormatter = new Intl.NumberFormat("en-UG", {
   style: "currency",
   currency: "UGX",
@@ -207,4 +221,22 @@ export async function reverifyOrderPayment(
   if (!response.ok) {
     throw new Error(payload?.error?.message ?? "Failed to reverify payment status");
   }
+}
+
+export async function reconcilePendingTrackedPayments(): Promise<PendingTrackedPaymentsReconcileStats> {
+  const response = await fetch("/api/admin/orders/reconcile-pending-payments", {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { ok?: boolean; data?: { stats?: PendingTrackedPaymentsReconcileStats }; error?: { message?: string } }
+    | null;
+
+  if (!response.ok || !payload?.ok || !payload.data?.stats) {
+    throw new Error(payload?.error?.message ?? "Failed to reconcile pending payments");
+  }
+
+  return payload.data.stats;
 }
