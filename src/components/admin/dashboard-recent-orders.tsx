@@ -27,6 +27,7 @@ import type { Order } from "@/lib/types/domain";
 
 const RECENT_ORDER_LIMIT = 6;
 const RECONCILE_DEBOUNCE_MS = 150;
+const AUTO_REVERIFY_INTERVAL_MS = 5 * 60_000;
 
 function formatPaymentStatus(value: string | null): string {
   if (!value) {
@@ -64,6 +65,7 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
   const [statusMessage, setStatusMessage] = useState("");
   const [recentOrders, setRecentOrders] = useState<Order[]>(() => orders.slice(0, RECENT_ORDER_LIMIT));
   const reconcileTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const autoReverifyInFlightRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setRecentOrders(orders.slice(0, RECENT_ORDER_LIMIT));
@@ -130,6 +132,51 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
       reconcileTimeoutsRef.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (!canUpdateStatus) {
+      return;
+    }
+
+    const pendingOrders = recentOrders.filter((order) => order.status === "Pending Payment");
+    if (pendingOrders.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const runAutoReverify = async () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      for (const order of pendingOrders) {
+        if (cancelled || autoReverifyInFlightRef.current.has(order.id)) {
+          continue;
+        }
+
+        autoReverifyInFlightRef.current.add(order.id);
+        try {
+          await reverifyOrderPayment(order);
+          await reconcileOrder(order.id);
+        } catch {
+          // Keep the dashboard quiet on background retries; manual action still exists.
+        } finally {
+          autoReverifyInFlightRef.current.delete(order.id);
+        }
+      }
+    };
+
+    void runAutoReverify();
+    const intervalId = window.setInterval(() => {
+      void runAutoReverify();
+    }, AUTO_REVERIFY_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [canUpdateStatus, recentOrders]);
 
   useOrdersRealtime({
     source: "DashboardRecentOrders",

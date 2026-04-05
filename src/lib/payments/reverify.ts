@@ -10,7 +10,7 @@ import {
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type NormalizedPaymentVerificationState = "paid" | "failed" | "cancelled" | "pending";
-const MANUAL_REVERIFY_PENDING_EXPIRY_MS = 10 * 60_000;
+const PENDING_PAYMENT_SOFT_CANCELLATION_MS = 15 * 60_000;
 const cancellablePendingStatuses = [
   "Pending",
   "pending",
@@ -141,7 +141,7 @@ function isOrderOlderThanPendingExpiryWindow(createdAt: string) {
     return false;
   }
 
-  return Date.now() - createdAtMs >= MANUAL_REVERIFY_PENDING_EXPIRY_MS;
+  return Date.now() - createdAtMs >= PENDING_PAYMENT_SOFT_CANCELLATION_MS;
 }
 
 function hasPaymentFieldsChanged(previous: OrderPaymentRecord, next: OrderPaymentRecord): boolean {
@@ -325,6 +325,29 @@ async function markExpiredPendingOrderCancelled(
 export async function reverifyOrderPayment(
   order: OrderPaymentRecord,
 ): Promise<OrderPaymentReverifyResult> {
+  if (!order.order_tracking_id) {
+    if (
+      isPendingOrderLifecycleState(order.status)
+      && isPendingPaymentVerificationState(order.payment_status)
+      && isOrderOlderThanPendingExpiryWindow(order.created_at)
+    ) {
+      const latestOrder = await markExpiredPendingOrderCancelled(order);
+      return {
+        order: latestOrder,
+        providerStatus: null,
+        paymentStatus: normalizeStoredPaymentStatus(latestOrder.payment_status),
+        updated: hasPaymentFieldsChanged(order, latestOrder),
+      };
+    }
+
+    return {
+      order,
+      providerStatus: null,
+      paymentStatus: normalizeStoredPaymentStatus(order.payment_status),
+      updated: false,
+    };
+  }
+
   const authorityResult = await callPaymentAuthority(order);
   let latestOrder = await getOrderPaymentRecord(order.id);
 

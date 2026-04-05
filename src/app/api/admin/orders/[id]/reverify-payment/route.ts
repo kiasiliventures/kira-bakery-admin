@@ -1,5 +1,5 @@
 import { writeAdminAuditLog } from "@/lib/audit/admin-audit";
-import { badRequest, conflict, notFound } from "@/lib/http/errors";
+import { conflict, notFound } from "@/lib/http/errors";
 import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
@@ -28,10 +28,6 @@ export const POST = withAdminRoute<{ id: string }>(
 
     if (order.updated_at !== input.updatedAt) {
       throw conflict("Order was modified concurrently");
-    }
-
-    if (!order.order_tracking_id) {
-      throw badRequest("Order does not have a payment tracking ID yet");
     }
 
     logger.info("admin_order_payment_reverify_start", {
