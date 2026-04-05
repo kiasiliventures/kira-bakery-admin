@@ -62,6 +62,9 @@ export type Order = {
     | "Cancelled";
   payment_status: string | null;
   order_tracking_id: string | null;
+  payment_initiation_failure_code: string | null;
+  payment_initiation_failure_message: string | null;
+  payment_initiation_failed_at: string | null;
   paid_at: string | null;
   inventory_deducted_at: string | null;
   fulfillment_review_required: boolean;

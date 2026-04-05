@@ -51,6 +51,9 @@ type ModernOrderRowWithItems = {
   status: string;
   payment_status: string | null;
   order_tracking_id: string | null;
+  payment_initiation_failure_code: string | null;
+  payment_initiation_failure_message: string | null;
+  payment_initiation_failed_at: string | null;
   paid_at: string | null;
   inventory_deducted_at: string | null;
   fulfillment_review_required: boolean | null;
@@ -68,7 +71,7 @@ type LegacyOrderRowWithItems = LegacyOrderRow & {
 };
 
 const modernOrderSelection =
-  "id,customer_id,customer_name,phone,email,address,delivery_method,delivery_date,notes,status,payment_status,order_tracking_id,paid_at,inventory_deducted_at,fulfillment_review_required,fulfillment_review_reason,inventory_conflict,inventory_deduction_status,total_ugx,created_at,updated_at,order_items(id,order_id,product_id,variant_id,name,image,price_ugx,price_at_time,quantity,selected_size,selected_flavor,inventory_allocation_status,inventory_deducted_quantity,inventory_conflict_quantity,inventory_conflict_reason,inventory_deducted_at,created_at,products(name),product_variants(name))";
+  "id,customer_id,customer_name,phone,email,address,delivery_method,delivery_date,notes,status,payment_status,order_tracking_id,payment_initiation_failure_code,payment_initiation_failure_message,payment_initiation_failed_at,paid_at,inventory_deducted_at,fulfillment_review_required,fulfillment_review_reason,inventory_conflict,inventory_deduction_status,total_ugx,created_at,updated_at,order_items(id,order_id,product_id,variant_id,name,image,price_ugx,price_at_time,quantity,selected_size,selected_flavor,inventory_allocation_status,inventory_deducted_quantity,inventory_conflict_quantity,inventory_conflict_reason,inventory_deducted_at,created_at,products(name),product_variants(name))";
 
 const legacyOrderSelection =
   "id,customer_name,customer_phone,customer_email,delivery_address,order_status,payment_status,total_price,created_at,updated_at,order_items(id,order_id,product_id,variant_id,quantity,price_at_time,created_at,products(name),product_variants(name))";
@@ -152,6 +155,9 @@ function mapLegacyOrder(order: LegacyOrderRowWithItems): Order {
     }),
     payment_status: normalizeAdminPaymentStatus(order.payment_status),
     order_tracking_id: null,
+    payment_initiation_failure_code: null,
+    payment_initiation_failure_message: null,
+    payment_initiation_failed_at: null,
     paid_at: null,
     inventory_deducted_at: null,
     fulfillment_review_required: false,
@@ -184,6 +190,9 @@ function mapModernOrder(order: ModernOrderRowWithItems): Order {
     }),
     payment_status: normalizeAdminPaymentStatus(order.payment_status),
     order_tracking_id: sanitizeText(order.order_tracking_id),
+    payment_initiation_failure_code: sanitizeText(order.payment_initiation_failure_code),
+    payment_initiation_failure_message: sanitizeText(order.payment_initiation_failure_message),
+    payment_initiation_failed_at: order.payment_initiation_failed_at,
     paid_at: order.paid_at,
     inventory_deducted_at: order.inventory_deducted_at,
     fulfillment_review_required: Boolean(order.fulfillment_review_required),

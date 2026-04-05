@@ -40,6 +40,19 @@ function formatPaymentStatus(value: string | null): string {
     .join(" ");
 }
 
+function formatInitiationFailureTimestamp(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString();
+}
+
 type Props = {
   orders: Order[];
   canUpdateStatus: boolean;
@@ -240,6 +253,22 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
                       <p className="mt-1">
                         {order.fulfillment_review_reason ?? "Payment succeeded, but fulfillment needs operator review before the order can move forward."}
                       </p>
+                    </div>
+                  ) : null}
+                  {order.payment_initiation_failure_message ? (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                      <p className="font-semibold">Pesapal initiation rejected</p>
+                      {order.payment_initiation_failure_code ? (
+                        <p className="mt-1 text-xs uppercase tracking-[0.14em] text-amber-700">
+                          Code: {order.payment_initiation_failure_code}
+                        </p>
+                      ) : null}
+                      <p className="mt-1">{order.payment_initiation_failure_message}</p>
+                      {formatInitiationFailureTimestamp(order.payment_initiation_failed_at) ? (
+                        <p className="mt-1 text-xs text-amber-700">
+                          Recorded {formatInitiationFailureTimestamp(order.payment_initiation_failed_at)}
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
                   <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-3">
