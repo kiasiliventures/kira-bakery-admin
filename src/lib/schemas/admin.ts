@@ -73,6 +73,15 @@ export const orderPaymentReverifySchema = z.object({
   updatedAt: isoTimestampSchema,
 });
 
+export const adminPushSubscriptionSchema = z.object({
+  endpoint: z.string().url().max(2_000),
+  expirationTime: z.number().int().nullable().optional(),
+  keys: z.object({
+    p256dh: z.string().trim().min(1).max(1_000),
+    auth: z.string().trim().min(1).max(1_000),
+  }),
+});
+
 export const userRolePatchSchema = z.object({
   role: z.enum(["admin", "manager", "staff"]),
 });
@@ -86,4 +95,5 @@ export type VariantCreateInput = z.infer<typeof variantCreateSchema>;
 export type VariantPatchInput = z.infer<typeof variantPatchSchema>;
 export type OrderStatusPatchInput = z.infer<typeof orderStatusPatchSchema>;
 export type OrderPaymentReverifyInput = z.infer<typeof orderPaymentReverifySchema>;
+export type AdminPushSubscriptionInput = z.infer<typeof adminPushSubscriptionSchema>;
 export type UserRolePatchInput = z.infer<typeof userRolePatchSchema>;

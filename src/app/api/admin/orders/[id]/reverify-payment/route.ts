@@ -8,6 +8,7 @@ import {
   getOrderPaymentRecord,
   reverifyOrderPayment,
 } from "@/lib/payments/reverify";
+import { notifyAdminsOfPaidOrderIfNeeded } from "@/lib/push/admin-paid-order-notifications";
 import { orderPaymentReverifySchema } from "@/lib/schemas/admin";
 
 export const POST = withAdminRoute<{ id: string }>(
@@ -42,6 +43,11 @@ export const POST = withAdminRoute<{ id: string }>(
       const result = await reverifyOrderPayment(order);
       const updatedOrder = result.order;
       const wasUpdated = result.updated;
+      const adminPushNotification = await notifyAdminsOfPaidOrderIfNeeded({
+        orderId: updatedOrder.id,
+        previousPaymentStatus: order.payment_status,
+        nextPaymentStatus: updatedOrder.payment_status,
+      });
 
       if (!wasUpdated && result.paymentStatus === "pending") {
         logger.info("admin_order_payment_reverify_pending", {
@@ -83,6 +89,7 @@ export const POST = withAdminRoute<{ id: string }>(
         fulfillmentReviewRequired: updatedOrder.fulfillment_review_required,
         inventoryConflict: updatedOrder.inventory_conflict,
         inventoryDeductionStatus: updatedOrder.inventory_deduction_status,
+        adminPushNotification,
         updated: wasUpdated,
       });
 
@@ -103,6 +110,7 @@ export const POST = withAdminRoute<{ id: string }>(
           fulfillmentReviewRequired: updatedOrder.fulfillment_review_required,
           inventoryConflict: updatedOrder.inventory_conflict,
           inventoryDeductionStatus: updatedOrder.inventory_deduction_status,
+          adminPushNotification,
         },
       });
 
@@ -110,6 +118,7 @@ export const POST = withAdminRoute<{ id: string }>(
         order: updatedOrder,
         providerStatus: result.providerStatus,
         paymentStatus: result.paymentStatus,
+        adminPushNotification,
         updated: wasUpdated,
       });
     } catch (error) {

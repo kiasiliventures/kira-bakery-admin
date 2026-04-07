@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ChevronDown, LayoutDashboard, Package, ClipboardList, Boxes, BadgeDollarSign } from "lucide-react";
+import { AdminPushSubscriptionControl } from "@/components/admin/admin-push-subscription-control";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { LogoutButton } from "@/components/admin/logout-button";
 
@@ -70,9 +71,12 @@ export function TopNav({ user }: Props) {
             <span className="hidden text-sm md:block">{user.role}</span>
             <ChevronDown className="h-4 w-4" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent>
+          <DropdownMenuContent className="w-72">
             <DropdownMenuItem>{user.name}</DropdownMenuItem>
             <DropdownMenuItem>{user.email}</DropdownMenuItem>
+            <div className="px-2 py-2">
+              <AdminPushSubscriptionControl />
+            </div>
             <div className="p-2">
               <LogoutButton />
             </div>

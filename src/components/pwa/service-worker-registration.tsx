@@ -1,14 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
+import { registerAppServiceWorker } from "@/lib/pwa/service-worker";
 
 export function ServiceWorkerRegistration() {
   useEffect(() => {
-    if (!("serviceWorker" in navigator)) {
-      return;
-    }
-
-    void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch((error) => {
+    void registerAppServiceWorker().catch((error) => {
       console.error("service_worker_registration_failed", error);
     });
   }, []);
