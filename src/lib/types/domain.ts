@@ -1,5 +1,8 @@
 export type AppRole = "admin" | "manager" | "staff";
 
+export type OpsIncidentSeverity = "critical" | "high" | "medium" | "low";
+export type OpsIncidentStatus = "open" | "resolved" | "ignored";
+
 export type Profile = {
   id: string;
   email: string;
@@ -97,4 +100,21 @@ export type OrderItem = {
   product_name: string | null;
   variant_name: string | null;
   created_at: string;
+};
+
+export type OpsIncident = {
+  id: string;
+  incident_type: string;
+  severity: OpsIncidentSeverity;
+  source: string;
+  message: string;
+  order_id: string | null;
+  payment_tracking_id: string | null;
+  dedupe_key: string;
+  context: Record<string, unknown> | null;
+  status: OpsIncidentStatus;
+  occurrence_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  resolved_at: string | null;
 };

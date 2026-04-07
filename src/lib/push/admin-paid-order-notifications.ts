@@ -9,6 +9,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 const ADMIN_PAID_ORDER_NOTIFICATION_TYPE = "new_paid_order";
 const MAX_DISPATCH_BATCH_SIZE = 25;
 const MAX_DISPATCH_ATTEMPTS = 6;
+const ADMIN_PUSH_DUE_SCAN_LIMIT = 2;
+const ADMIN_PUSH_MIN_RUN_INTERVAL_MS = 30_000;
 const RETRY_DELAYS_MS = [
   60_000,
   5 * 60_000,
@@ -74,6 +76,8 @@ export type AdminPaidOrderNotificationResult = {
   duplicate: boolean;
   processing: AdminPushQueueStats | null;
 };
+let adminPushProcessingPromise: Promise<AdminPushQueueStats | null> | null = null;
+let adminPushLastRunAt = 0;
 
 function isPaidPaymentStatus(paymentStatus: string | null | undefined) {
   return normalizeAdminPaymentStatus(paymentStatus) === "paid";
@@ -495,6 +499,43 @@ export async function processAdminPushDispatchQueue(options?: {
   logger.info("admin_push_dispatch_queue_processed", stats);
 
   return stats;
+}
+
+export function scheduleAdminPushDispatchQueueProcessing(trigger: string) {
+  const nowMs = Date.now();
+  if (adminPushProcessingPromise) {
+    return adminPushProcessingPromise;
+  }
+
+  if (nowMs - adminPushLastRunAt < ADMIN_PUSH_MIN_RUN_INTERVAL_MS) {
+    return null;
+  }
+
+  const runPromise = processAdminPushDispatchQueue({
+    limit: ADMIN_PUSH_DUE_SCAN_LIMIT,
+  })
+    .then((stats) => {
+      adminPushLastRunAt = Date.now();
+      logger.info("admin_push_dispatch_due_scan_completed", {
+        trigger,
+        ...stats,
+      });
+      return stats;
+    })
+    .catch((error) => {
+      adminPushLastRunAt = Date.now();
+      logger.error("admin_push_dispatch_due_scan_failed", {
+        trigger,
+        error: error instanceof Error ? error.message : "unknown_error",
+      });
+      return null;
+    })
+    .finally(() => {
+      adminPushProcessingPromise = null;
+    });
+
+  adminPushProcessingPromise = runPromise;
+  return runPromise;
 }
 
 export async function notifyAdminsOfPaidOrderIfNeeded(input: {

@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireRole, type RequestIdentity } from "@/lib/auth/authorize";
 import type { AllowedRole } from "@/lib/auth/roles";
+import { runAfterResponse } from "@/lib/http/after-response";
 import { mapUnknownError, jsonError } from "@/lib/http/responses";
 import { assertSameOriginMutation, getRequestIp } from "@/lib/http/route-helpers";
 import { logger } from "@/lib/logger";
+import { scheduleAdminPushDispatchQueueProcessing } from "@/lib/push/admin-paid-order-notifications";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 type HandlerContext<TParams extends Record<string, string> = Record<string, string>> = {
@@ -41,6 +43,10 @@ export function withAdminRoute<TParams extends Record<string, string> = Record<s
         userId: identity.user.id,
         role: identity.profile.role,
         ip,
+      });
+
+      runAfterResponse(async () => {
+        await scheduleAdminPushDispatchQueueProcessing(config.actionName);
       });
 
       return await handler(request, { identity, params, ip });

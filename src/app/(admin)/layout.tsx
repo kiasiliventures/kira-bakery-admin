@@ -42,7 +42,7 @@ export default async function AdminLayout({
   return (
     <ToastProvider>
       <div className="min-h-screen bg-background">
-        <TopNav user={topNavUser} />
+        <TopNav user={topNavUser} isAdmin={profileRole === "admin"} />
         <main className="mx-auto w-full max-w-[1320px] px-4 pb-8 pt-[88px] md:px-6">{children}</main>
       </div>
     </ToastProvider>

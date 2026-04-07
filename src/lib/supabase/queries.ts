@@ -1,7 +1,7 @@
 import "server-only";
 import { deriveAdminDisplayOrderStatus, normalizeAdminPaymentStatus } from "@/lib/order-display-state";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { Category, Order, OrderItem, Product, ProductVariant, Profile } from "@/lib/types/domain";
+import type { Category, OpsIncident, Order, OrderItem, Product, ProductVariant, Profile } from "@/lib/types/domain";
 
 type LegacyOrderRow = {
   id: string;
@@ -340,4 +340,23 @@ export async function getProfiles(): Promise<Profile[]> {
     .select("*")
     .order("created_at", { ascending: false });
   return (data ?? []) as Profile[];
+}
+
+export async function getOperationalIncidents(options?: { limit?: number }): Promise<OpsIncident[]> {
+  const supabase = await createSupabaseServerClient();
+  const limit = Math.max(1, Math.min(100, Math.trunc(options?.limit ?? 50)));
+  const { data, error } = await supabase
+    .from("ops_incidents")
+    .select(
+      "id,incident_type,severity,source,message,order_id,payment_tracking_id,dedupe_key,context,status,occurrence_count,first_seen_at,last_seen_at,resolved_at",
+    )
+    .order("status", { ascending: true })
+    .order("last_seen_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to load operational incidents: ${error.message}`);
+  }
+
+  return (data ?? []) as OpsIncident[];
 }

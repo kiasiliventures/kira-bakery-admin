@@ -1,16 +1,20 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ChevronDown, LayoutDashboard, Package, ClipboardList, Boxes, BadgeDollarSign } from "lucide-react";
+import { ChevronDown, LayoutDashboard, Package, ClipboardList, Boxes, BadgeDollarSign, Siren } from "lucide-react";
 import { AdminPushSubscriptionControl } from "@/components/admin/admin-push-subscription-control";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { LogoutButton } from "@/components/admin/logout-button";
 
-const links = [
+const baseLinks = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Products", icon: Package },
   { href: "/cakes", label: "Cake Pricing", icon: BadgeDollarSign },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/orders", label: "Orders", icon: ClipboardList },
+]
+
+const adminOnlyLinks = [
+  { href: "/incidents", label: "Incidents", icon: Siren },
 ];
 
 type Props = {
@@ -20,9 +24,12 @@ type Props = {
     role: string;
     avatarUrl: string | null;
   };
+  isAdmin: boolean;
 };
 
-export function TopNav({ user }: Props) {
+export function TopNav({ user, isAdmin }: Props) {
+  const links = isAdmin ? [...baseLinks, ...adminOnlyLinks] : baseLinks;
+
   return (
     <header className="fixed inset-x-0 top-0 z-40 h-16 bg-kira-red text-white">
       <div className="mx-auto flex h-full w-full max-w-[1320px] items-center justify-between px-4 md:px-6">

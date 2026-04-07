@@ -86,6 +86,10 @@ export const userRolePatchSchema = z.object({
   role: z.enum(["admin", "manager", "staff"]),
 });
 
+export const incidentStatusPatchSchema = z.object({
+  status: z.enum(["open", "resolved", "ignored"]),
+});
+
 export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;
 export type CategoryPatchInput = z.infer<typeof categoryPatchSchema>;
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
@@ -97,3 +101,4 @@ export type OrderStatusPatchInput = z.infer<typeof orderStatusPatchSchema>;
 export type OrderPaymentReverifyInput = z.infer<typeof orderPaymentReverifySchema>;
 export type AdminPushSubscriptionInput = z.infer<typeof adminPushSubscriptionSchema>;
 export type UserRolePatchInput = z.infer<typeof userRolePatchSchema>;
+export type IncidentStatusPatchInput = z.infer<typeof incidentStatusPatchSchema>;
