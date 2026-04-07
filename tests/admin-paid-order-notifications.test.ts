@@ -324,4 +324,35 @@ describe("admin paid order notifications", () => {
     expect(webPushMock.sendNotification).not.toHaveBeenCalled();
     expect(db.dispatches).toHaveLength(0);
   });
+
+  it("gracefully skips processing when the claim rpc is missing from schema cache", async () => {
+    const db = buildDb();
+    const supabase = createFakeSupabase(db);
+    createSupabaseAdminClientMock.mockReturnValue({
+      ...supabase,
+      rpc: () =>
+        Promise.resolve({
+          data: null,
+          error: {
+            message:
+              "Could not find the function public.claim_admin_push_dispatches(p_limit, p_order_id) in the schema cache",
+          },
+        }),
+    });
+
+    const { processAdminPushDispatchQueue } = await import("@/lib/push/admin-paid-order-notifications");
+    const stats = await processAdminPushDispatchQueue();
+
+    expect(stats).toEqual({
+      claimed: 0,
+      succeeded: 0,
+      retried: 0,
+      failed: 0,
+      noSubscribers: 0,
+      subscriptionsDelivered: 0,
+      subscriptionsExpired: 0,
+      subscriptionFailures: 0,
+      claimedDispatchIds: [],
+    });
+  });
 });

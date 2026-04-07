@@ -79,6 +79,15 @@ export type AdminPaidOrderNotificationResult = {
 let adminPushProcessingPromise: Promise<AdminPushQueueStats | null> | null = null;
 let adminPushLastRunAt = 0;
 
+function isMissingClaimDispatchesRpcError(message: string) {
+  const normalized = message.trim().toLowerCase();
+  return (
+    normalized.includes("could not find the function public.claim_admin_push_dispatches")
+    || normalized.includes("claim_admin_push_dispatches")
+    && normalized.includes("schema cache")
+  );
+}
+
 function isPaidPaymentStatus(paymentStatus: string | null | undefined) {
   return normalizeAdminPaymentStatus(paymentStatus) === "paid";
 }
@@ -237,6 +246,15 @@ async function claimDispatches(options?: { limit?: number; orderId?: string }) {
   });
 
   if (error) {
+    if (isMissingClaimDispatchesRpcError(error.message)) {
+      logger.warn("admin_push_dispatch_claim_rpc_missing", {
+        limit,
+        orderId: options?.orderId ?? null,
+        error: error.message,
+      });
+      return [];
+    }
+
     throw new Error(`Unable to claim admin push dispatches: ${error.message}`);
   }
 
