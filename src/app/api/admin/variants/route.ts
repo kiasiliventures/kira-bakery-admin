@@ -3,6 +3,7 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { variantCreateSchema } from "@/lib/schemas/admin";
+import { triggerStorefrontCatalogRevalidation } from "@/lib/storefront-catalog-revalidation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const POST = withAdminRoute(
@@ -35,6 +36,11 @@ export const POST = withAdminRoute(
       throw new Error(`Variant insert failed: ${error.message}`);
     }
 
-    return jsonOk({ variant: data }, 201);
+    const storefrontCacheInvalidation = await triggerStorefrontCatalogRevalidation({
+      source: "admin_variant_create",
+      productIds: [input.productId],
+    });
+
+    return jsonOk({ variant: data, storefrontCacheInvalidation }, 201);
   },
 );

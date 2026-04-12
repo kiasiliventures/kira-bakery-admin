@@ -3,6 +3,7 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { productPatchSchema } from "@/lib/schemas/admin";
+import { triggerStorefrontCatalogRevalidation } from "@/lib/storefront-catalog-revalidation";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -58,7 +59,12 @@ export const PATCH = withAdminRoute<{ id: string }>(
       throw new Error(`Product update failed: ${error.message}`);
     }
 
-    return jsonOk({ product: data });
+    const storefrontCacheInvalidation = await triggerStorefrontCatalogRevalidation({
+      source: "admin_product_patch",
+      productIds: [params.id],
+    });
+
+    return jsonOk({ product: data, storefrontCacheInvalidation });
   },
 );
 
@@ -111,12 +117,18 @@ export const DELETE = withAdminRoute<{ id: string }>(
         throw new Error(`Product retire failed: ${retireError.message}`);
       }
 
+      const storefrontCacheInvalidation = await triggerStorefrontCatalogRevalidation({
+        source: "admin_product_delete",
+        productIds: [params.id],
+      });
+
       return jsonOk({
         deleted: false,
         archived: true,
         productId: params.id,
         product: retiredProduct,
         message: `"${product.name}" has order history, so it was unpublished instead of deleted.`,
+        storefrontCacheInvalidation,
       });
     }
 
@@ -159,11 +171,17 @@ export const DELETE = withAdminRoute<{ id: string }>(
       throw new Error(`Product delete failed: ${productDeleteError.message}`);
     }
 
+    const storefrontCacheInvalidation = await triggerStorefrontCatalogRevalidation({
+      source: "admin_product_delete",
+      productIds: [params.id],
+    });
+
     return jsonOk({
       deleted: true,
       archived: false,
       productId: params.id,
       message: `"${product.name}" was deleted.`,
+      storefrontCacheInvalidation,
     });
   },
 );

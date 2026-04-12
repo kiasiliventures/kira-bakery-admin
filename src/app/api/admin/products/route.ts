@@ -3,6 +3,7 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { productBatchCreateSchema, productCreateSchema } from "@/lib/schemas/admin";
+import { triggerStorefrontCatalogRevalidation } from "@/lib/storefront-catalog-revalidation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { z } from "zod";
 
@@ -72,11 +73,18 @@ export const POST = withAdminRoute(
       clientRequestId,
       product: (data ?? []).find((product) => product.id === id) ?? null,
     }));
+    const storefrontCacheInvalidation = await triggerStorefrontCatalogRevalidation({
+      source: "admin_product_create",
+      productIds: createdProducts
+        .map((entry) => entry.product?.id)
+        .filter((productId): productId is string => typeof productId === "string"),
+    });
 
     return jsonOk(
       {
         product: createdProducts[0]?.product ?? null,
         products: createdProducts,
+        storefrontCacheInvalidation,
       },
       201,
     );

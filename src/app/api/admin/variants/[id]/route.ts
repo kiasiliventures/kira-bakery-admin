@@ -3,6 +3,7 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { variantPatchSchema } from "@/lib/schemas/admin";
+import { triggerStorefrontCatalogRevalidation } from "@/lib/storefront-catalog-revalidation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const PATCH = withAdminRoute<{ id: string }>(
@@ -17,7 +18,7 @@ export const PATCH = withAdminRoute<{ id: string }>(
 
     const { data: existing, error: existingError } = await supabase
       .from("product_variants")
-      .select("id,updated_at")
+      .select("id,product_id,updated_at")
       .eq("id", params.id)
       .maybeSingle();
 
@@ -49,6 +50,11 @@ export const PATCH = withAdminRoute<{ id: string }>(
       throw new Error(`Variant update failed: ${error.message}`);
     }
 
-    return jsonOk({ variant: data });
+    const storefrontCacheInvalidation = await triggerStorefrontCatalogRevalidation({
+      source: "admin_variant_patch",
+      productIds: [existing.product_id],
+    });
+
+    return jsonOk({ variant: data, storefrontCacheInvalidation });
   },
 );
