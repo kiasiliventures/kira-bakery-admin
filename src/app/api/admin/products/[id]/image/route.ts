@@ -1,6 +1,7 @@
 import { badRequest, notFound } from "@/lib/http/errors";
 import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
+import { triggerStorefrontCatalogRevalidation } from "@/lib/storefront-catalog-revalidation";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -119,10 +120,16 @@ export const POST = withAdminRoute<{ id: string }>(
       throw new Error(`Product image update failed: ${updateError.message}`);
     }
 
+    const storefrontCacheInvalidation = await triggerStorefrontCatalogRevalidation({
+      source: "admin_product_image_upload",
+      productIds: [params.id],
+    });
+
     return jsonOk({
       path,
       publicUrl,
       product: updatedProduct,
+      storefrontCacheInvalidation,
     });
   },
 );

@@ -3,6 +3,7 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { categoryCreateSchema } from "@/lib/schemas/admin";
+import { triggerStorefrontCatalogRevalidation } from "@/lib/storefront-catalog-revalidation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const POST = withAdminRoute(
@@ -29,6 +30,11 @@ export const POST = withAdminRoute(
       throw new Error(`Category insert failed: ${error.message}`);
     }
 
-    return jsonOk({ category: data }, 201);
+    const storefrontCacheInvalidation = await triggerStorefrontCatalogRevalidation({
+      source: "admin_category_create",
+      productIds: [],
+    });
+
+    return jsonOk({ category: data, storefrontCacheInvalidation }, 201);
   },
 );

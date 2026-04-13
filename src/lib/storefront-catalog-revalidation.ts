@@ -10,13 +10,75 @@ import { logger } from "@/lib/logger";
 
 const STOREFRONT_CATALOG_REVALIDATION_TIMEOUT_MS = 8_000;
 const STOREFRONT_CATALOG_REVALIDATION_PURPOSE = "storefront_catalog_revalidation";
+const STOREFRONT_CATALOG_BASE_PATHS = [
+  "/",
+  "/menu",
+  "/api/products",
+  "/sitemap.xml",
+] as const;
+const STOREFRONT_CATALOG_BASE_TAGS = ["catalog:products"] as const;
 
 export type StorefrontCatalogRevalidationSource =
+  | "admin_category_create"
+  | "admin_category_patch"
   | "admin_product_create"
   | "admin_product_patch"
+  | "admin_product_image_upload"
   | "admin_product_delete"
   | "admin_variant_create"
   | "admin_variant_patch";
+
+type StorefrontCatalogInvalidationRule = {
+  tags: readonly string[];
+  paths: readonly string[];
+  includeProductScopedSurfaces: boolean;
+};
+
+export const STOREFRONT_CATALOG_INVALIDATION_MAP: Record<
+  StorefrontCatalogRevalidationSource,
+  StorefrontCatalogInvalidationRule
+> = {
+  admin_category_create: {
+    tags: STOREFRONT_CATALOG_BASE_TAGS,
+    paths: STOREFRONT_CATALOG_BASE_PATHS,
+    includeProductScopedSurfaces: false,
+  },
+  admin_category_patch: {
+    tags: STOREFRONT_CATALOG_BASE_TAGS,
+    paths: STOREFRONT_CATALOG_BASE_PATHS,
+    includeProductScopedSurfaces: true,
+  },
+  admin_product_create: {
+    tags: STOREFRONT_CATALOG_BASE_TAGS,
+    paths: STOREFRONT_CATALOG_BASE_PATHS,
+    includeProductScopedSurfaces: true,
+  },
+  admin_product_patch: {
+    tags: STOREFRONT_CATALOG_BASE_TAGS,
+    paths: STOREFRONT_CATALOG_BASE_PATHS,
+    includeProductScopedSurfaces: true,
+  },
+  admin_product_image_upload: {
+    tags: STOREFRONT_CATALOG_BASE_TAGS,
+    paths: STOREFRONT_CATALOG_BASE_PATHS,
+    includeProductScopedSurfaces: true,
+  },
+  admin_product_delete: {
+    tags: STOREFRONT_CATALOG_BASE_TAGS,
+    paths: STOREFRONT_CATALOG_BASE_PATHS,
+    includeProductScopedSurfaces: true,
+  },
+  admin_variant_create: {
+    tags: STOREFRONT_CATALOG_BASE_TAGS,
+    paths: STOREFRONT_CATALOG_BASE_PATHS,
+    includeProductScopedSurfaces: true,
+  },
+  admin_variant_patch: {
+    tags: STOREFRONT_CATALOG_BASE_TAGS,
+    paths: STOREFRONT_CATALOG_BASE_PATHS,
+    includeProductScopedSurfaces: true,
+  },
+};
 
 type TriggerStorefrontCatalogRevalidationInput = {
   source: StorefrontCatalogRevalidationSource;
@@ -41,6 +103,43 @@ function getStorefrontSigningSecret() {
 
 function normalizeProductIds(productIds: string[]) {
   return [...new Set(productIds.map((productId) => productId.trim()).filter(Boolean))];
+}
+
+function getCatalogProductTag(productId: string) {
+  return `catalog:product:${productId}`;
+}
+
+function getExpectedTags(
+  source: StorefrontCatalogRevalidationSource,
+  productIds: string[],
+) {
+  const rule = STOREFRONT_CATALOG_INVALIDATION_MAP[source];
+  const tags = new Set<string>(rule.tags);
+
+  if (rule.includeProductScopedSurfaces) {
+    for (const productId of productIds) {
+      tags.add(getCatalogProductTag(productId));
+    }
+  }
+
+  return [...tags];
+}
+
+function getExpectedPaths(
+  source: StorefrontCatalogRevalidationSource,
+  productIds: string[],
+) {
+  const rule = STOREFRONT_CATALOG_INVALIDATION_MAP[source];
+  const paths = new Set<string>(rule.paths);
+
+  if (rule.includeProductScopedSurfaces) {
+    for (const productId of productIds) {
+      paths.add(`/menu/${productId}`);
+      paths.add(`/api/products/${productId}`);
+    }
+  }
+
+  return [...paths];
 }
 
 async function parseResponsePayload(response: Response): Promise<unknown> {
@@ -89,6 +188,8 @@ export async function triggerStorefrontCatalogRevalidation(
   input: TriggerStorefrontCatalogRevalidationInput,
 ): Promise<TriggerStorefrontCatalogRevalidationResult> {
   const productIds = normalizeProductIds(input.productIds);
+  const expectedTags = getExpectedTags(input.source, productIds);
+  const expectedPaths = getExpectedPaths(input.source, productIds);
   const path = "/api/internal/catalog/revalidate";
   const url = `${getStorefrontBaseUrl()}${path}`;
   const token = signInternalRequestToken({
@@ -137,8 +238,8 @@ export async function triggerStorefrontCatalogRevalidation(
         attempted: true,
         accepted: false,
         productIds,
-        tags,
-        paths,
+        tags: tags.length > 0 ? tags : expectedTags,
+        paths: paths.length > 0 ? paths : expectedPaths,
       };
     }
 
@@ -167,8 +268,8 @@ export async function triggerStorefrontCatalogRevalidation(
       attempted: true,
       accepted: false,
       productIds,
-      tags: [],
-      paths: [],
+      tags: expectedTags,
+      paths: expectedPaths,
     };
   }
 }

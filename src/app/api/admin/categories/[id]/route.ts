@@ -3,6 +3,7 @@ import { withAdminRoute } from "@/lib/http/admin-route";
 import { jsonOk } from "@/lib/http/responses";
 import { parseJsonBody } from "@/lib/http/route-helpers";
 import { categoryPatchSchema } from "@/lib/schemas/admin";
+import { triggerStorefrontCatalogRevalidation } from "@/lib/storefront-catalog-revalidation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const PATCH = withAdminRoute<{ id: string }>(
@@ -53,6 +54,22 @@ export const PATCH = withAdminRoute<{ id: string }>(
       throw new Error(`Category update failed: ${error.message}`);
     }
 
-    return jsonOk({ category: data });
+    const { data: relatedProducts, error: relatedProductsError } = await supabase
+      .from("products")
+      .select("id")
+      .eq("category_id", params.id);
+
+    if (relatedProductsError) {
+      throw new Error(`Category product lookup failed: ${relatedProductsError.message}`);
+    }
+
+    const storefrontCacheInvalidation = await triggerStorefrontCatalogRevalidation({
+      source: "admin_category_patch",
+      productIds: (relatedProducts ?? [])
+        .map((product) => product.id)
+        .filter((productId): productId is string => typeof productId === "string"),
+    });
+
+    return jsonOk({ category: data, storefrontCacheInvalidation });
   },
 );
