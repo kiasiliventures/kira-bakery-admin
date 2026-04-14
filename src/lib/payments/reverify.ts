@@ -10,7 +10,7 @@ import {
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type NormalizedPaymentVerificationState = "paid" | "failed" | "cancelled" | "pending";
-const PENDING_PAYMENT_SOFT_CANCELLATION_MS = 15 * 60_000;
+const PENDING_PAYMENT_SOFT_CANCELLATION_MS = 7 * 60_000;
 export const PENDING_PAYMENT_RECONCILE_LOOKBACK_MS = 2 * 60 * 60_000;
 export const PENDING_PAYMENT_REVERIFY_THROTTLE_MS = 5 * 60_000;
 export const PENDING_PAYMENT_RECONCILE_SCAN_LIMIT = 50;
@@ -139,7 +139,7 @@ function normalizeStoredPaymentStatus(paymentStatus: string | null | undefined):
     return "failed";
   }
 
-  if (normalized === "cancelled" || normalized === "canceled" || normalized === "invalid") {
+  if (normalized === "cancelled" || normalized === "canceled") {
     return "cancelled";
   }
 

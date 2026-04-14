@@ -29,12 +29,15 @@ export function normalizeAdminPaymentStatus(
   if (
     normalized === "cancelled"
     || normalized === "canceled"
-    || normalized === "invalid"
   ) {
     return "cancelled";
   }
 
-  if (normalized === "unpaid" || normalized === "pending") {
+  if (
+    normalized === "unpaid"
+    || normalized === "pending"
+    || normalized === "invalid"
+  ) {
     return "pending";
   }
 
