@@ -10,7 +10,7 @@ function parseLimit(request: Request) {
     return 100;
   }
 
-  return Math.max(1, Math.min(100, Math.trunc(parsed)));
+  return Math.max(1, Math.min(500, Math.trunc(parsed)));
 }
 
 export const GET = withAdminRoute(
@@ -20,7 +20,14 @@ export const GET = withAdminRoute(
     rateLimit: { limit: 240, windowMs: 60_000 },
   },
   async (request) => {
-    const orders = await getOrders({ limit: parseLimit(request) });
+    const url = new URL(request.url);
+    const createdAtGte = url.searchParams.get("createdAtGte") ?? undefined;
+    const createdAtLt = url.searchParams.get("createdAtLt") ?? undefined;
+    const orders = await getOrders({
+      limit: parseLimit(request),
+      createdAtGte,
+      createdAtLt,
+    });
     return jsonOk({ orders });
   },
 );

@@ -1,28 +1,26 @@
 import { DashboardRecentOrders } from "@/components/admin/dashboard-recent-orders";
 import { MetricCard } from "@/components/admin/metric-card";
+import { OverviewAnalyticsCards } from "@/components/admin/overview-analytics-cards";
 import { PageShell } from "@/components/admin/page-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { guardPage } from "@/lib/auth/page-guard";
+import { getAnalyticsSeries } from "@/lib/analytics/queries";
 import { getDashboardMetrics, getOrders, getProducts } from "@/lib/supabase/queries";
 
 const RECENT_ORDER_LIMIT = 6;
 const trend = [6, 9, 7, 10, 11, 12, 14];
-const currencyFormatter = new Intl.NumberFormat("en-UG", {
-  style: "currency",
-  currency: "UGX",
-  maximumFractionDigits: 0,
-});
 
 export default async function DashboardPage() {
   const identity = await guardPage(["admin", "manager", "staff"]);
-  const [metrics, orders, products] = await Promise.all([
+  const [metrics, orders, products, revenueSeries, orderSeries] = await Promise.all([
     getDashboardMetrics(),
     getOrders({ limit: RECENT_ORDER_LIMIT }),
     getProducts(),
+    getAnalyticsSeries({ metric: "revenue", timeframe: "today" }),
+    getAnalyticsSeries({ metric: "orders", timeframe: "today" }),
   ]);
 
   const pendingCount = orders.filter((order) => order.status === "Pending Payment").length;
-  const totalRevenue = orders.reduce((sum, order) => sum + order.total_ugx, 0);
   const latestProducts = products.slice(0, 4);
   const canUpdateStatus =
     identity.profile.role === "admin" ||
@@ -32,9 +30,8 @@ export default async function DashboardPage() {
   return (
     <PageShell title="Dashboard Overview">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard title="Total Orders" value={String(metrics.orderCount)} trendLine={trend} />
+        <OverviewAnalyticsCards initialRevenueSeries={revenueSeries} initialOrdersSeries={orderSeries} />
         <MetricCard title="Pending Payment" value={String(pendingCount)} trendLine={trend} />
-        <MetricCard title="Total Revenue" value={currencyFormatter.format(totalRevenue)} trendLine={trend} />
         <MetricCard title="Total Products" value={String(metrics.productCount)} trendLine={trend} />
       </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type SheetContextValue = {
@@ -19,6 +20,21 @@ export function Sheet({
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
 }) {
+  React.useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onOpenChange(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onOpenChange, open]);
+
   return <SheetContext.Provider value={{ open, onOpenChange }}>{children}</SheetContext.Provider>;
 }
 
@@ -47,14 +63,26 @@ export function SheetContent({
   const context = React.useContext(SheetContext);
   if (!context?.open) return null;
   return (
-    <div className="fixed inset-0 z-50 bg-black/30">
+    <div className="fixed inset-0 z-50 bg-black/30" onClick={() => context.onOpenChange(false)}>
       <div
         className={cn(
-          "absolute top-0 h-full w-full max-w-md border-l border-kira-border bg-white p-5 shadow-xl",
-          side === "right" ? "right-0" : "left-0 border-r border-l-0",
+          "absolute top-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)] max-w-md rounded-2xl bg-white p-5 shadow-xl",
+          side === "right"
+            ? "right-2 border border-kira-border"
+            : "left-2 border border-kira-border",
           className,
         )}
+        onClick={(event) => event.stopPropagation()}
       >
+        <button
+          type="button"
+          aria-label="Close panel"
+          onClick={() => context.onOpenChange(false)}
+          className="absolute top-4 right-4 inline-flex h-10 items-center justify-center gap-2 rounded-full border border-kira-border bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-100"
+        >
+          <X className="h-5 w-5" />
+          <span>Close</span>
+        </button>
         {children}
       </div>
     </div>

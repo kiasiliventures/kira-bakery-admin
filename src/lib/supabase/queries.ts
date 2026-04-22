@@ -258,21 +258,43 @@ export async function getVariantsByProductId(productId: string): Promise<Product
   return (data ?? []) as ProductVariant[];
 }
 
-export async function getOrders(options?: { limit?: number }): Promise<Order[]> {
+export async function getOrders(options?: {
+  limit?: number;
+  createdAtGte?: string;
+  createdAtLt?: string;
+}): Promise<Order[]> {
   const supabase = await createSupabaseServerClient();
-  const limit = Math.max(1, Math.min(100, Math.trunc(options?.limit ?? 100)));
-  const modern = await supabase
+  const limit = Math.max(1, Math.min(500, Math.trunc(options?.limit ?? 100)));
+  let modernQuery = supabase
     .from("orders")
     .select(modernOrderSelection)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+    .order("created_at", { ascending: false });
+
+  if (options?.createdAtGte) {
+    modernQuery = modernQuery.gte("created_at", options.createdAtGte);
+  }
+
+  if (options?.createdAtLt) {
+    modernQuery = modernQuery.lt("created_at", options.createdAtLt);
+  }
+
+  const modern = await modernQuery.limit(limit);
 
   if (modern.error?.code === "42703") {
-    const legacy = await supabase
+    let legacyQuery = supabase
       .from("orders")
       .select(legacyOrderSelection)
-      .order("created_at", { ascending: false })
-      .limit(limit);
+      .order("created_at", { ascending: false });
+
+    if (options?.createdAtGte) {
+      legacyQuery = legacyQuery.gte("created_at", options.createdAtGte);
+    }
+
+    if (options?.createdAtLt) {
+      legacyQuery = legacyQuery.lt("created_at", options.createdAtLt);
+    }
+
+    const legacy = await legacyQuery.limit(limit);
 
     return ((legacy.data ?? []) as LegacyOrderRowWithItems[]).map(mapLegacyOrder);
   }
