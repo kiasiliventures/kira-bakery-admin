@@ -162,9 +162,22 @@ export async function fetchAdminOrderById(orderId: string): Promise<Order | null
   return payload.data?.order ?? null;
 }
 
-export async function fetchAdminOrders(limit = 100): Promise<Order[]> {
-  const normalizedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
-  const response = await fetch(`/api/admin/orders?limit=${normalizedLimit}`, {
+type FetchAdminOrdersOptions = {
+  limit?: number;
+  detail?: "summary" | "detail";
+};
+
+export async function fetchAdminOrders(options: number | FetchAdminOrdersOptions = {}): Promise<Order[]> {
+  const limit = typeof options === "number" ? options : options.limit;
+  const detail = typeof options === "number" ? undefined : options.detail;
+  const normalizedLimit = Math.max(1, Math.min(100, Math.trunc(limit ?? 50)));
+  const params = new URLSearchParams({ limit: String(normalizedLimit) });
+
+  if (detail === "detail") {
+    params.set("detail", "detail");
+  }
+
+  const response = await fetch(`/api/admin/orders?${params.toString()}`, {
     method: "GET",
     headers: { Accept: "application/json" },
     cache: "no-store",

@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   const identity = await guardPage(["admin", "manager", "staff"]);
   const [metrics, orders, products, revenueSeries, orderSeries] = await Promise.all([
     getDashboardMetrics(),
-    getOrders({ limit: RECENT_ORDER_LIMIT }),
+    getOrders({ limit: RECENT_ORDER_LIMIT, detail: "summary" }),
     getProducts(),
     getAnalyticsSeries({ metric: "revenue", timeframe: "today" }),
     getAnalyticsSeries({ metric: "orders", timeframe: "today" }),

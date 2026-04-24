@@ -74,7 +74,16 @@ export function OrderStatusManager({ orders, canUpdateStatus }: Props) {
 
   const refreshOrders = async () => {
     const nextOrders = await fetchAdminOrders();
-    setLocalOrders(nextOrders);
+    setLocalOrders((current) =>
+      nextOrders.map((order) => {
+        if (order.items.length > 0) {
+          return order;
+        }
+
+        const currentOrder = current.find((candidate) => candidate.id === order.id);
+        return currentOrder ? { ...order, items: currentOrder.items } : order;
+      }),
+    );
   };
 
   const reconcileOrder = async (orderId: string) => {

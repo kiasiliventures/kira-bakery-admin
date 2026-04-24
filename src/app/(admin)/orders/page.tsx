@@ -5,7 +5,7 @@ import { getOrders } from "@/lib/supabase/queries";
 
 export default async function OrdersPage() {
   const identity = await guardPage(["admin", "manager", "staff"]);
-  const orders = await getOrders();
+  const orders = await getOrders({ detail: "detail" });
   const canUpdateStatus =
     identity.profile.role === "admin" ||
     identity.profile.role === "manager" ||

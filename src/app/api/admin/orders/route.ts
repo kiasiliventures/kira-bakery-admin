@@ -2,15 +2,22 @@ import { jsonOk } from "@/lib/http/responses";
 import { getOrders } from "@/lib/supabase/queries";
 import { withAdminRoute } from "@/lib/http/admin-route";
 
+const DEFAULT_ORDER_LIST_LIMIT = 50;
+const MAX_ORDER_LIST_LIMIT = 100;
+
 function parseLimit(request: Request) {
   const raw = new URL(request.url).searchParams.get("limit");
-  const parsed = Number(raw ?? "100");
+  const parsed = Number(raw ?? String(DEFAULT_ORDER_LIST_LIMIT));
 
   if (!Number.isFinite(parsed)) {
-    return 100;
+    return DEFAULT_ORDER_LIST_LIMIT;
   }
 
-  return Math.max(1, Math.min(500, Math.trunc(parsed)));
+  return Math.max(1, Math.min(MAX_ORDER_LIST_LIMIT, Math.trunc(parsed)));
+}
+
+function parseDetail(request: Request) {
+  return new URL(request.url).searchParams.get("detail") === "detail" ? "detail" : "summary";
 }
 
 export const GET = withAdminRoute(
@@ -27,6 +34,7 @@ export const GET = withAdminRoute(
       limit: parseLimit(request),
       createdAtGte,
       createdAtLt,
+      detail: parseDetail(request),
     });
     return jsonOk({ orders });
   },

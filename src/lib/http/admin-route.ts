@@ -3,10 +3,17 @@ import { requireRole, type RequestIdentity } from "@/lib/auth/authorize";
 import type { AllowedRole } from "@/lib/auth/roles";
 import { runAfterResponse } from "@/lib/http/after-response";
 import { mapUnknownError, jsonError } from "@/lib/http/responses";
-import { assertSameOriginMutation, getRequestIp } from "@/lib/http/route-helpers";
+import {
+  assertSameOriginMutation,
+  getRequestIp,
+  getSafeClientFingerprint,
+} from "@/lib/http/route-helpers";
 import { logger } from "@/lib/logger";
 import { scheduleAdminPushDispatchQueueProcessing } from "@/lib/push/admin-paid-order-notifications";
-import { enforceRateLimit } from "@/lib/security/rate-limit";
+import {
+  enforceRateLimit,
+  getAdminPreAuthRateLimit,
+} from "@/lib/security/rate-limit";
 
 type HandlerContext<TParams extends Record<string, string> = Record<string, string>> = {
   identity: RequestIdentity;
@@ -29,6 +36,14 @@ export function withAdminRoute<TParams extends Record<string, string> = Record<s
     try {
       const params = await routeContext.params;
       assertSameOriginMutation(request);
+      const clientFingerprint = getSafeClientFingerprint(request);
+      const preAuthRateLimit = getAdminPreAuthRateLimit(request.method);
+      await enforceRateLimit({
+        key: `preauth:${config.actionName}:${clientFingerprint}`,
+        limit: preAuthRateLimit.limit,
+        windowMs: preAuthRateLimit.windowMs,
+      });
+
       const identity = await requireRole(config.allowedRoles);
       const ip = getRequestIp(request);
       const rateLimit = config.rateLimit ?? { limit: 60, windowMs: 60_000 };

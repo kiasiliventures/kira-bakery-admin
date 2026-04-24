@@ -87,7 +87,16 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
 
   const refreshRecentOrders = async () => {
     const nextOrders = await fetchAdminOrders(RECENT_ORDER_LIMIT);
-    setRecentOrders(nextOrders.slice(0, RECENT_ORDER_LIMIT));
+    setRecentOrders((current) =>
+      nextOrders.slice(0, RECENT_ORDER_LIMIT).map((order) => {
+        if (order.items.length > 0) {
+          return order;
+        }
+
+        const currentOrder = current.find((candidate) => candidate.id === order.id);
+        return currentOrder ? { ...order, items: currentOrder.items } : order;
+      }),
+    );
   };
 
   const reconcileOrder = async (orderId: string) => {
@@ -223,6 +232,9 @@ export function DashboardRecentOrders({ orders, canUpdateStatus }: Props) {
                 onClick={() => {
                   setStatusMessage("");
                   setExpandedId((current) => (current === order.id ? null : order.id));
+                  if (!isExpanded && order.items.length === 0) {
+                    void reconcileOrder(order.id);
+                  }
                 }}
               >
                 <div className="min-w-0 flex-1">

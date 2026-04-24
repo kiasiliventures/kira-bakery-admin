@@ -7,6 +7,15 @@ type RateLimitOptions = {
   windowMs: number;
 };
 
+export function getAdminPreAuthRateLimit(method: string) {
+  const normalizedMethod = method.trim().toUpperCase();
+  if (normalizedMethod === "GET" || normalizedMethod === "HEAD" || normalizedMethod === "OPTIONS") {
+    return { limit: 180, windowMs: 60_000 };
+  }
+
+  return { limit: 60, windowMs: 60_000 };
+}
+
 export async function enforceRateLimit(options: RateLimitOptions): Promise<void> {
   const { key, limit, windowMs } = options;
   const supabaseAdmin = createSupabaseAdminClient();

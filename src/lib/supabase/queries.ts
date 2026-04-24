@@ -70,11 +70,22 @@ type LegacyOrderRowWithItems = LegacyOrderRow & {
   order_items: OrderItemRelation[] | null;
 };
 
+type OrderDetailMode = "summary" | "detail";
+
+const DEFAULT_ORDER_LIST_LIMIT = 50;
+const MAX_ORDER_LIST_LIMIT = 100;
+
 const modernOrderSelection =
   "id,customer_id,customer_name,phone,email,address,delivery_method,delivery_date,notes,status,payment_status,order_tracking_id,payment_initiation_failure_code,payment_initiation_failure_message,payment_initiation_failed_at,paid_at,inventory_deducted_at,fulfillment_review_required,fulfillment_review_reason,inventory_conflict,inventory_deduction_status,total_ugx,created_at,updated_at,order_items(id,order_id,product_id,variant_id,name,image,price_ugx,price_at_time,quantity,selected_size,selected_flavor,inventory_allocation_status,inventory_deducted_quantity,inventory_conflict_quantity,inventory_conflict_reason,inventory_deducted_at,created_at,products(name),product_variants(name))";
 
 const legacyOrderSelection =
   "id,customer_name,customer_phone,customer_email,delivery_address,order_status,payment_status,total_price,created_at,updated_at,order_items(id,order_id,product_id,variant_id,quantity,price_at_time,created_at,products(name),product_variants(name))";
+
+const modernOrderSummarySelection =
+  "id,customer_id,customer_name,phone,email,address,delivery_method,delivery_date,notes,status,payment_status,order_tracking_id,payment_initiation_failure_code,payment_initiation_failure_message,payment_initiation_failed_at,paid_at,inventory_deducted_at,fulfillment_review_required,fulfillment_review_reason,inventory_conflict,inventory_deduction_status,total_ugx,created_at,updated_at";
+
+const legacyOrderSummarySelection =
+  "id,customer_name,customer_phone,customer_email,delivery_address,order_status,payment_status,total_price,created_at,updated_at";
 
 function sanitizeText(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -139,7 +150,7 @@ function sortOrderItems(items: OrderItemRelation[] | null | undefined): OrderIte
     .map(mapOrderItem);
 }
 
-function mapLegacyOrder(order: LegacyOrderRowWithItems): Order {
+function mapLegacyOrder(order: LegacyOrderRow | LegacyOrderRowWithItems): Order {
   return {
     id: order.id,
     customer_name: order.customer_name,
@@ -167,11 +178,11 @@ function mapLegacyOrder(order: LegacyOrderRowWithItems): Order {
     total_ugx: Math.round(Number(order.total_price)),
     created_at: order.created_at,
     updated_at: order.updated_at,
-    items: sortOrderItems(order.order_items),
+    items: sortOrderItems("order_items" in order ? order.order_items : null),
   };
 }
 
-function mapModernOrder(order: ModernOrderRowWithItems): Order {
+function mapModernOrder(order: Omit<ModernOrderRowWithItems, "order_items"> | ModernOrderRowWithItems): Order {
   return {
     id: order.id,
     customer_id: order.customer_id,
@@ -202,7 +213,7 @@ function mapModernOrder(order: ModernOrderRowWithItems): Order {
     total_ugx: order.total_ugx,
     created_at: order.created_at,
     updated_at: order.updated_at,
-    items: sortOrderItems(order.order_items),
+    items: sortOrderItems("order_items" in order ? order.order_items : null),
   };
 }
 
@@ -262,12 +273,14 @@ export async function getOrders(options?: {
   limit?: number;
   createdAtGte?: string;
   createdAtLt?: string;
+  detail?: OrderDetailMode;
 }): Promise<Order[]> {
   const supabase = await createSupabaseServerClient();
-  const limit = Math.max(1, Math.min(500, Math.trunc(options?.limit ?? 100)));
+  const limit = Math.max(1, Math.min(MAX_ORDER_LIST_LIMIT, Math.trunc(options?.limit ?? DEFAULT_ORDER_LIST_LIMIT)));
+  const detail = options?.detail ?? "summary";
   let modernQuery = supabase
     .from("orders")
-    .select(modernOrderSelection)
+    .select(detail === "detail" ? modernOrderSelection : modernOrderSummarySelection)
     .order("created_at", { ascending: false });
 
   if (options?.createdAtGte) {
@@ -283,7 +296,7 @@ export async function getOrders(options?: {
   if (modern.error?.code === "42703") {
     let legacyQuery = supabase
       .from("orders")
-      .select(legacyOrderSelection)
+      .select(detail === "detail" ? legacyOrderSelection : legacyOrderSummarySelection)
       .order("created_at", { ascending: false });
 
     if (options?.createdAtGte) {
@@ -296,10 +309,12 @@ export async function getOrders(options?: {
 
     const legacy = await legacyQuery.limit(limit);
 
-    return ((legacy.data ?? []) as LegacyOrderRowWithItems[]).map(mapLegacyOrder);
+    return ((legacy.data ?? []) as unknown as Array<LegacyOrderRow | LegacyOrderRowWithItems>).map(mapLegacyOrder);
   }
 
-  return ((modern.data ?? []) as ModernOrderRowWithItems[]).map(mapModernOrder);
+  return ((modern.data ?? []) as unknown as Array<Omit<ModernOrderRowWithItems, "order_items"> | ModernOrderRowWithItems>).map(
+    mapModernOrder,
+  );
 }
 
 export async function getOrderById(id: string): Promise<Order | null> {

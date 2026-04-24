@@ -18,6 +18,7 @@ export async function parseJsonBody<T>(
 }
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const TRUSTED_PROXY_MARKER_HEADERS = ["x-vercel-id", "cf-ray", "fly-region"];
 
 function getForwardedHeaderValue(request: Request, name: string): string | null {
   const value = request.headers.get(name);
@@ -28,6 +29,27 @@ function getForwardedHeaderValue(request: Request, name: string): string | null 
   return value
     .split(",")[0]
     ?.trim() || null;
+}
+
+function hasKnownProxyMarker(request: Request): boolean {
+  return TRUSTED_PROXY_MARKER_HEADERS.some((header) =>
+    Boolean(request.headers.get(header)),
+  );
+}
+
+function toFingerprintPart(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9.:_-]+/g, "-").slice(0, 96);
+}
+
+function hashFingerprintPart(value: string): string {
+  let hash = 2_166_136_261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+
+  return (hash >>> 0).toString(36);
 }
 
 function getRequestOrigin(request: Request): string {
@@ -75,9 +97,36 @@ export function assertSameOriginMutation(request: Request): void {
 }
 
 export function getRequestIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    return forwarded.split(",")[0]?.trim() || "unknown";
+  const cloudflareIp = getForwardedHeaderValue(request, "cf-connecting-ip");
+  if (cloudflareIp) {
+    return cloudflareIp;
   }
-  return request.headers.get("x-real-ip") || "unknown";
+
+  const flyIp = getForwardedHeaderValue(request, "fly-client-ip");
+  if (flyIp) {
+    return flyIp;
+  }
+
+  if (hasKnownProxyMarker(request)) {
+    const forwarded = getForwardedHeaderValue(request, "x-forwarded-for");
+    if (forwarded) {
+      return forwarded;
+    }
+
+    const realIp = getForwardedHeaderValue(request, "x-real-ip");
+    if (realIp) {
+      return realIp;
+    }
+  }
+
+  return "unknown";
+}
+
+export function getSafeClientFingerprint(request: Request): string {
+  const ip = toFingerprintPart(getRequestIp(request) || "unknown");
+  const userAgent =
+    request.headers.get("user-agent")?.trim().replace(/\s+/g, " ") ||
+    "unknown";
+
+  return `ip:${ip}:ua:${hashFingerprintPart(userAgent)}`;
 }
